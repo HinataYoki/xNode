@@ -13,31 +13,33 @@ using GenericMenu = XNodeEditor.AdvancedGenericMenu;
 #endif
 
 namespace XNodeEditor {
-    /// <summary> Base class to derive custom Node editors from. Use this to create your own custom inspectors and editors for your nodes. </summary>
+    /// <summary> 自定义节点编辑器的基类。继承它可为节点创建自定义的检视器与编辑器。 </summary>
     [CustomNodeEditor(typeof(XNode.Node))]
     public class NodeEditor : XNodeEditor.Internal.NodeEditorBase<NodeEditor, NodeEditor.CustomNodeEditorAttribute, XNode.Node> {
 
-        /// <summary> Fires every whenever a node was modified through the editor </summary>
+        /// <summary> 节点在编辑器中被修改时触发 </summary>
         public static Action<XNode.Node> onUpdateNode;
         public readonly static Dictionary<XNode.NodePort, Vector2> portPositions = new Dictionary<XNode.NodePort, Vector2>();
 
 #if ODIN_INSPECTOR
+        /// <summary> Odin 绘制期间的递归守卫：置位时 Odin 特性处理器按节点编辑器环境工作 </summary>
         protected internal static bool inNodeEditor = false;
 #endif
 
+        /// <summary> 绘制节点标题栏：默认画节点名（居中加粗白字，高 30） </summary>
         public virtual void OnHeaderGUI() {
             GUILayout.Label(target.name, NodeEditorResources.styles.nodeHeader, GUILayout.Height(30));
         }
 
-        /// <summary> Draws standard field editors for all public fields </summary>
+        /// <summary> 为所有公共字段绘制标准字段编辑器 </summary>
         public virtual void OnBodyGUI() {
 #if ODIN_INSPECTOR
             inNodeEditor = true;
 #endif
 
-            // Unity specifically requires this to save/update any serial object.
-            // serializedObject.Update(); must go at the start of an inspector gui, and
-            // serializedObject.ApplyModifiedProperties(); goes at the end.
+            // Unity 明确要求这样才能保存/更新任何序列化对象。
+            // serializedObject.Update(); 必须放在检视器 GUI 的开头，
+            // serializedObject.ApplyModifiedProperties(); 则放在结尾。
             serializedObject.Update();
             string[] excludes = { "m_Script", "graph", "position", "ports" };
 
@@ -71,7 +73,7 @@ namespace XNodeEditor {
             GUIHelper.PopLabelWidth();
 #else
 
-            // Iterate through serialized properties and draw them like the Inspector (But with ports)
+            //遍历序列化属性并像 Inspector 一样绘制（但带端口）
             SerializedProperty iterator = serializedObject.GetIterator();
             bool enterChildren = true;
             while (iterator.NextVisible(enterChildren)) {
@@ -81,7 +83,7 @@ namespace XNodeEditor {
             }
 #endif
 
-            // Iterate through dynamic ports and draw them in the order in which they are serialized
+            //按序列化顺序遍历并绘制动态端口
             foreach (XNode.NodePort dynamicPort in target.DynamicPorts) {
                 if (NodeEditorGUILayout.IsDynamicPortListPort(dynamicPort)) continue;
                 NodeEditorGUILayout.PortField(dynamicPort);
@@ -90,7 +92,7 @@ namespace XNodeEditor {
             serializedObject.ApplyModifiedProperties();
 
 #if ODIN_INSPECTOR
-            // Call repaint so that the graph window elements respond properly to layout changes coming from Odin
+            //调用重绘，使图窗口元素正确响应来自 Odin 的布局变化
             if (GUIHelper.RepaintRequested) {
                 GUIHelper.ClearRepaintRequest();
                 window.Repaint();
@@ -102,6 +104,7 @@ namespace XNodeEditor {
 #endif
         }
 
+        /// <summary> 节点宽度：[NodeWidth] 特性优先，未标注时默认 208 像素 </summary>
         public virtual int GetWidth() {
             Type type = target.GetType();
             int width;
@@ -109,20 +112,22 @@ namespace XNodeEditor {
             else return 208;
         }
 
-        /// <summary> Returns color for target node </summary>
+        /// <summary> 返回目标节点的颜色 </summary>
         public virtual Color GetTint() {
-            // Try get color from [NodeTint] attribute
+            //尝试从 [NodeTint] 特性获取颜色
             Type type = target.GetType();
             Color color;
             if (type.TryGetAttributeTint(out color)) return color;
-            // Return default color (grey)
+            //返回默认颜色（灰色）
             else return NodeEditorPreferences.GetSettings().tintColor;
         }
 
+        /// <summary> 节点主体样式：圆角九宫格背景贴图，DrawNodes 据此包出节点面板 </summary>
         public virtual GUIStyle GetBodyStyle() {
             return NodeEditorResources.styles.nodeBody;
         }
 
+        /// <summary> 选中态的高亮描边样式；DrawNodes 会把它叠在主体样式外层 </summary>
         public virtual GUIStyle GetBodyHighlightStyle() {
             return NodeEditorResources.styles.nodeHighlight;
         }
@@ -132,10 +137,10 @@ namespace XNodeEditor {
             return null;
         }
 
-        /// <summary> Add items for the context menu when right-clicking this node. Override to add custom menu items. </summary>
+        /// <summary> 右键点击节点时向上下文菜单添加菜单项。可重写此方法以添加自定义菜单项。 </summary>
         public virtual void AddContextMenuItems(GenericMenu menu) {
             bool canRemove = true;
-            // Actions if only one node is selected
+            //仅选中单个节点时可用的操作
             if (Selection.objects.Length == 1 && Selection.activeObject is XNode.Node) {
                 XNode.Node node = Selection.activeObject as XNode.Node;
                 menu.AddItem(new GUIContent("Move To Top"), false, () => NodeEditorWindow.current.MoveNodeToTop(node));
@@ -144,21 +149,21 @@ namespace XNodeEditor {
                 canRemove = NodeGraphEditor.GetEditor(node.graph, NodeEditorWindow.current).CanRemove(node);
             }
 
-            // Add actions to any number of selected nodes
+            //对任意数量选中节点都可用的操作
             menu.AddItem(new GUIContent("Copy"), false, NodeEditorWindow.current.CopySelectedNodes);
             menu.AddItem(new GUIContent("Duplicate"), false, NodeEditorWindow.current.DuplicateSelectedNodes);
 
             if (canRemove) menu.AddItem(new GUIContent("Remove"), false, NodeEditorWindow.current.RemoveSelectedNodes);
             else menu.AddItem(new GUIContent("Remove"), false, null);
 
-            // Custom sctions if only one node is selected
+            //仅选中单个节点时的自定义操作
             if (Selection.objects.Length == 1 && Selection.activeObject is XNode.Node) {
                 XNode.Node node = Selection.activeObject as XNode.Node;
                 menu.AddCustomContextMenuItems(node);
             }
         }
 
-        /// <summary> Rename the node asset. This will trigger a reimport of the node. </summary>
+        /// <summary> 重命名节点资源。这会触发该节点重新导入。 </summary>
         public void Rename(string newName) {
             if (newName == null || newName.Trim() == "") newName = NodeEditorUtilities.NodeDefaultName(target.GetType());
             target.name = newName;
@@ -166,19 +171,20 @@ namespace XNodeEditor {
             AssetDatabase.ImportAsset(AssetDatabase.GetAssetPath(target));
         }
 
-        /// <summary> Called after this node's name has changed. </summary>
+        /// <summary> 节点名称更改后调用。 </summary>
         public virtual void OnRename() { }
 
         [AttributeUsage(AttributeTargets.Class)]
         public class CustomNodeEditorAttribute : Attribute,
         XNodeEditor.Internal.NodeEditorBase<NodeEditor, NodeEditor.CustomNodeEditorAttribute, XNode.Node>.INodeEditorAttrib {
             private Type inspectedType;
-            /// <summary> Tells a NodeEditor which Node type it is an editor for </summary>
-            /// <param name="inspectedType">Type that this editor can edit</param>
+            /// <summary> 指明该 NodeEditor 是哪种节点类型的编辑器 </summary>
+            /// <param name="inspectedType">此编辑器可编辑的类型</param>
             public CustomNodeEditorAttribute(Type inspectedType) {
                 this.inspectedType = inspectedType;
             }
 
+            /// <summary> 返回本特性声明的节点类型；NodeEditorBase 靠它建立 目标类型 -> 编辑器类型 映射 </summary>
             public Type GetInspectedType() {
                 return inspectedType;
             }

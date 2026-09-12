@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -9,12 +9,12 @@ using Sirenix.OdinInspector.Editor;
 #endif
 
 namespace XNodeEditor.Internal {
-	/// <summary> Handles caching of custom editor classes and their target types. Accessible with GetEditor(Type type) </summary>
-	/// <typeparam name="T">Editor Type. Should be the type of the deriving script itself (eg. NodeEditor) </typeparam>
-	/// <typeparam name="A">Attribute Type. The attribute used to connect with the runtime type (eg. CustomNodeEditorAttribute) </typeparam>
-	/// <typeparam name="K">Runtime Type. The ScriptableObject this can be an editor for (eg. Node) </typeparam>
+	/// <summary> 负责缓存自定义编辑器类及其目标类型。可通过 GetEditor(Type type) 访问 </summary>
+	/// <typeparam name="T">编辑器类型。应为派生脚本自身的类型（如 NodeEditor） </typeparam>
+	/// <typeparam name="A">特性类型。用于关联运行时类型的特性（如 CustomNodeEditorAttribute） </typeparam>
+	/// <typeparam name="K">运行时类型。此编辑器可编辑的 ScriptableObject（如 Node） </typeparam>
 	public abstract class NodeEditorBase<T, A, K> where A : Attribute, NodeEditorBase<T, A, K>.INodeEditorAttrib where T : NodeEditorBase<T, A, K> where K : ScriptableObject {
-		/// <summary> Custom editors defined with [CustomNodeEditor] </summary>
+		/// <summary> 用 [CustomNodeEditor] 定义的自定义编辑器 </summary>
 		private static Dictionary<Type, Type> editorTypes;
 		private static Dictionary<K, T> editors = new Dictionary<K, T>();
 		public NodeEditorWindow window;
@@ -58,6 +58,7 @@ namespace XNodeEditor.Internal {
 			return editor;
 		}
 
+	    /// <summary> 从缓存移除目标的编辑器实例；Odin 属性树失效等场景下调用以强制重建 </summary>
         public static void DestroyEditor( K target )
         {
             if ( target == null ) return;
@@ -68,19 +69,21 @@ namespace XNodeEditor.Internal {
             }
         }
 
+		/// <summary> 沿目标继承链向上查找已注册的自定义编辑器类型；走到 null 返回 null </summary>
 		private static Type GetEditorType(Type type) {
 			if (type == null) return null;
 			if (editorTypes == null) CacheCustomEditors();
 			Type result;
 			if (editorTypes.TryGetValue(type, out result)) return result;
-			//If type isn't found, try base type
+			//找不到类型时，尝试其基类型
 			return GetEditorType(type.BaseType);
 		}
 
+		/// <summary> 反射扫描全部非抽象编辑器派生类，按其特性建立 目标类型 -> 编辑器类型 映射缓存 </summary>
 		private static void CacheCustomEditors() {
 			editorTypes = new Dictionary<Type, Type>();
 
-			//Get all classes deriving from NodeEditor via reflection
+			//通过反射获取所有从 NodeEditor 派生的类
 			Type[] nodeEditors = typeof(T).GetDerivedTypes();
 			for (int i = 0; i < nodeEditors.Length; i++) {
 				if (nodeEditors[i].IsAbstract) continue;
@@ -91,7 +94,7 @@ namespace XNodeEditor.Internal {
 			}
 		}
 
-		/// <summary> Called on creation, after references have been set </summary>
+		/// <summary> 创建时调用，此时各引用已设置完毕 </summary>
 		public virtual void OnCreate() { }
 
 		public interface INodeEditorAttrib {

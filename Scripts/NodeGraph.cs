@@ -1,22 +1,21 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace XNode {
-    /// <summary> Base class for all node graphs </summary>
+    /// <summary> 所有节点图的基类 </summary>
     [Serializable]
     public abstract class NodeGraph : ScriptableObject {
 
-        /// <summary> All nodes in the graph. <para/>
-        /// See: <see cref="AddNode{T}"/> </summary>
+        /// <summary> 图中的全部节点 </summary>
         [SerializeField] public List<Node> nodes = new List<Node>();
 
-        /// <summary> Add a node to the graph by type (convenience method - will call the System.Type version) </summary>
+        /// <summary> 按类型添加节点（便捷重载，转发到 System.Type 版本） </summary>
         public T AddNode<T>() where T : Node {
             return AddNode(typeof(T)) as T;
         }
 
-        /// <summary> Add a node to the graph by type </summary>
+        /// <summary> 按类型添加节点 </summary>
         public virtual Node AddNode(Type type) {
             Node.graphHotfix = this;
             Node node = ScriptableObject.CreateInstance(type) as Node;
@@ -25,7 +24,7 @@ namespace XNode {
             return node;
         }
 
-        /// <summary> Creates a copy of the original node in the graph </summary>
+        /// <summary> 在图中创建指定节点的副本 </summary>
         public virtual Node CopyNode(Node original) {
             Node.graphHotfix = this;
             Node node = ScriptableObject.Instantiate(original);
@@ -35,15 +34,15 @@ namespace XNode {
             return node;
         }
 
-        /// <summary> Safely remove a node and all its connections </summary>
-        /// <param name="node"> The node to remove </param>
+        /// <summary> 安全移除节点及其全部连接 </summary>
+        /// <param name="node">要移除的节点</param>
         public virtual void RemoveNode(Node node) {
             node.ClearConnections();
             nodes.Remove(node);
             if (Application.isPlaying) Destroy(node);
         }
 
-        /// <summary> Remove all nodes and connections from the graph </summary>
+        /// <summary> 清空图中的全部节点和连接 </summary>
         public virtual void Clear() {
             if (Application.isPlaying) {
                 for (int i = 0; i < nodes.Count; i++) {
@@ -53,11 +52,10 @@ namespace XNode {
             nodes.Clear();
         }
 
-        /// <summary> Create a new deep copy of this graph </summary>
+        /// <summary> 创建本图的深拷贝（含全部节点与连接的重定向） </summary>
         public virtual XNode.NodeGraph Copy() {
-            // Instantiate a new nodegraph instance
+            // 先实例化图本身，再逐个实例化节点；graphHotfix 保证节点 OnEnable 时能拿到新图引用
             NodeGraph graph = Instantiate(this);
-            // Instantiate all nodes inside the graph
             for (int i = 0; i < nodes.Count; i++) {
                 if (nodes[i] == null) continue;
                 Node.graphHotfix = graph;
@@ -66,7 +64,7 @@ namespace XNode {
                 graph.nodes[i] = node;
             }
 
-            // Redirect all connections
+            // 把节点连接从旧节点列表批量重定向到新节点列表
             for (int i = 0; i < graph.nodes.Count; i++) {
                 if (graph.nodes[i] == null) continue;
                 foreach (NodePort port in graph.nodes[i].Ports) {
@@ -77,40 +75,42 @@ namespace XNode {
             return graph;
         }
 
+        /// <summary> 图销毁回调：先清空全部节点再让自身销毁，Play 模式下同时 Destroy 各节点对象 </summary>
         protected virtual void OnDestroy() {
-            // Remove all nodes prior to graph destruction
+            // 图销毁前先清空节点，避免残留子资产
             Clear();
         }
 
 #region Attributes
-        /// <summary> Automatically ensures the existance of a certain node type, and prevents it from being deleted. </summary>
+        /// <summary> 自动保证图中存在指定类型的节点，并阻止其被删除 </summary>
         [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
         public class RequireNodeAttribute : Attribute {
             public Type type0;
             public Type type1;
             public Type type2;
 
-            /// <summary> Automatically ensures the existance of a certain node type, and prevents it from being deleted </summary>
+            /// <summary> 要求图中存在 1 个指定类型节点 </summary>
             public RequireNodeAttribute(Type type) {
                 this.type0 = type;
                 this.type1 = null;
                 this.type2 = null;
             }
 
-            /// <summary> Automatically ensures the existance of a certain node type, and prevents it from being deleted </summary>
+            /// <summary> 要求图中存在 2 个指定类型节点 </summary>
             public RequireNodeAttribute(Type type, Type type2) {
                 this.type0 = type;
                 this.type1 = type2;
                 this.type2 = null;
             }
 
-            /// <summary> Automatically ensures the existance of a certain node type, and prevents it from being deleted </summary>
+            /// <summary> 要求图中存在 3 个指定类型节点 </summary>
             public RequireNodeAttribute(Type type, Type type2, Type type3) {
                 this.type0 = type;
                 this.type1 = type2;
                 this.type2 = type3;
             }
 
+            /// <summary> 该要求是否覆盖指定类型 </summary>
             public bool Requires(Type type) {
                 if (type == null) return false;
                 if (type == type0) return true;

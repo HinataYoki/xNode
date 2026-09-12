@@ -1,16 +1,17 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
 
 namespace XNode {
-    /// <summary> Precaches reflection data in editor so we won't have to do it runtime </summary>
+    /// <summary> 预缓存反射数据，避免运行期反复扫描类型与字段 </summary>
     public static class NodeDataCache {
         private static PortDataCache portDataCache;
         private static Dictionary<System.Type, Dictionary<string, string>> formerlySerializedAsCache;
         private static Dictionary<System.Type, string> typeQualifiedNameCache;
         private static bool Initialized { get { return portDataCache != null; } }
 
+        /// <summary> 取类型限定名并缓存，用于端口的类型按名反序列化 </summary>
         public static string GetTypeQualifiedName(System.Type type) {
             if(typeQualifiedNameCache == null) typeQualifiedNameCache = new Dictionary<System.Type, string>();
             
@@ -22,7 +23,10 @@ namespace XNode {
             return name;
         }
 
-        /// <summary> Update static ports and dynamic ports managed by DynamicPortLists to reflect class fields. </summary>
+        /// <summary>
+        /// 让节点端口与类字段定义保持一致：移除失效静态端口、补建新端口、同步动态列表端口设置。
+        /// 会被编辑器每帧调用，端口已全部匹配时走零分配快路径直接返回。
+        /// </summary>
         public static void UpdatePorts(Node node, Dictionary<string, NodePort> ports) {
             if (!Initialized) BuildCache();
 
@@ -43,21 +47,19 @@ namespace XNode {
             // AND update dynamic ports (albeit only those in lists) too, in order to enforce proper serialisation.
             // Loop through current node ports
             foreach (NodePort port in ports.Values.ToArray()) {
-                // If port still exists, check it it has been changed
                 NodePort staticPort;
                 if (staticPorts.TryGetValue(port.fieldName, out staticPort)) {
-                    // If port exists but with wrong settings, remove it. Re-add it later.
+                    // 端口存在但方向/连接类型/约束变了：移除后走补建流程；设置没变的动态端口不受影响
                     if (port.IsDynamic || port.direction != staticPort.direction || port.connectionType != staticPort.connectionType || port.typeConstraint != staticPort.typeConstraint) {
-                        // If port is not dynamic and direction hasn't changed, add it to the list so we can try reconnecting the ports connections.
+                        // 非动态且方向未变时，记录旧连接以便补建后尝试重连
                         if (!port.IsDynamic && port.direction == staticPort.direction) removedPorts.Add(port.fieldName, port.GetConnections());
                         port.ClearConnections();
                         ports.Remove(port.fieldName);
                     } else port.ValueType = staticPort.ValueType;
                 }
-                // If port doesn't exist anymore, remove it
+                // 端口对应的字段已不存在：移除
                 else if (port.IsStatic) {
-                    //See if the field is tagged with FormerlySerializedAs, if so add the port with its new field name to removedPorts
-                    // so it can be reconnected in missing ports stage.
+                    // 字段带 FormerlySerializedAs 时，把旧字段名的连接记下来，补建阶段按新名字重连
                     string newName = null;
                     if (formerlySerializedAs != null && formerlySerializedAs.TryGetValue(port.fieldName, out newName)) removedPorts.Add(newName, port.GetConnections());
 
@@ -69,19 +71,17 @@ namespace XNode {
                     dynamicListPorts.Add(port);
                 }
             }
-            // Add missing ports
+            // 补建缺失的静态端口，并尝试恢复刚才记录的连接
             foreach (NodePort staticPort in staticPorts.Values) {
                 if (!ports.ContainsKey(staticPort.fieldName)) {
                     NodePort port = new NodePort(staticPort, node);
-                    //If we just removed the port, try re-adding the connections
                     List<NodePort> reconnectConnections;
                     if (removedPorts.TryGetValue(staticPort.fieldName, out reconnectConnections)) {
                         for (int i = 0; i < reconnectConnections.Count; i++) {
                             NodePort connection = reconnectConnections[i];
                             if (connection == null) continue;
-                            // CAVEAT: Ports connected under special conditions defined in graphEditor.CanConnect overrides will not auto-connect.
-                            // To fix this, this code would need to be moved to an editor script and call graphEditor.CanConnect instead of port.CanConnectTo.
-                            // This is only a problem in the rare edge case where user is using non-standard CanConnect overrides and changes port type of an already connected port
+                            // 注意：graphEditor.CanConnect 里自定义的特殊连接条件在此不会生效（这里只能用端口自身的
+                            // CanConnectTo 判断）；仅在用户改端口类型且已有非标准 CanConnect 覆写的边缘场景下有影响
                             if (port.CanConnectTo(connection)) port.Connect(connection);
                         }
                     }
@@ -89,14 +89,11 @@ namespace XNode {
                 }
             }
 
-            // Finally, make sure dynamic list port settings correspond to the settings of their "backing port"
+            // 动态列表端口与后背端口的设置保持一致（新建端口会破坏编辑器，因此原地更新）
             foreach (NodePort listPort in dynamicListPorts) {
-                // At this point we know that ports here are dynamic list ports
-                // which have passed name/"backing port" checks, ergo we can proceed more safely.
                 string backingPortName = listPort.fieldName.Substring(0, listPort.fieldName.IndexOf(' '));
                 NodePort backingPort = staticPorts[backingPortName];
 
-                // Update port constraints. Creating a new port instead will break the editor, mandating the need for setters.
                 listPort.ValueType = GetBackingValueType(backingPort.ValueType);
                 listPort.direction = backingPort.direction;
                 listPort.connectionType = backingPort.connectionType;
@@ -139,21 +136,19 @@ namespace XNode {
             });
         }
 
-        /// <summary> Cache node types </summary>
+        /// <summary> 扫描程序集构建节点类型与端口缓存 </summary>
         private static void BuildCache() {
             portDataCache = new PortDataCache();
             System.Type baseType = typeof(Node);
             List<System.Type> nodeTypes = new List<System.Type>();
             System.Reflection.Assembly[] assemblies = System.AppDomain.CurrentDomain.GetAssemblies();
 
-            // Loop through assemblies and add node types to list
             foreach (Assembly assembly in assemblies) {
-                // Skip certain dlls to improve performance
+                // 跳过系统与 Unity 自带程序集（含子程序集，如 UnityEngine.UI），减少扫描量
                 string assemblyName = assembly.GetName().Name;
                 int index = assemblyName.IndexOf('.');
                 if (index != -1) assemblyName = assemblyName.Substring(0, index);
                 switch (assemblyName) {
-                    // The following assemblies, and sub-assemblies (eg. UnityEngine.UI) are skipped
                     case "UnityEditor":
                     case "UnityEngine":
                     case "Unity":
@@ -175,12 +170,11 @@ namespace XNode {
         public static List<FieldInfo> GetNodeFields(System.Type nodeType) {
             List<System.Reflection.FieldInfo> fieldInfo = new List<System.Reflection.FieldInfo>(nodeType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
 
-            // GetFields doesnt return inherited private fields, so walk through base types and pick those up
             System.Type tempType = nodeType;
             while ((tempType = tempType.BaseType) != typeof(XNode.Node)) {
                 FieldInfo[] parentFields = tempType.GetFields(BindingFlags.NonPublic | BindingFlags.Instance);
                 for (int i = 0; i < parentFields.Length; i++) {
-                    // Ensure that we do not already have a member with this type and name
+                    // 同名字段只保留派生类的一份
                     FieldInfo parentField = parentFields[i];
                     if (fieldInfo.TrueForAll(x => x.Name != parentField.Name)) {
                         fieldInfo.Add(parentField);
@@ -190,12 +184,17 @@ namespace XNode {
             return fieldInfo;
         }
 
+        /// <summary>
+        /// 扫描节点类型的全部字段（含基类私有字段），把带 [Input]/[Output] 特性的字段
+        /// 构建成静态端口模板写入 portDataCache；同时登记 FormerlySerializedAs 旧字段名映射
+        /// 与 dynamicPortList 字段名集合，供端口改名后重连与列表端口快速判定使用。
+        /// </summary>
         private static void CachePorts(System.Type nodeType) {
             List<System.Reflection.FieldInfo> fieldInfo = GetNodeFields(nodeType);
 
             for (int i = 0; i < fieldInfo.Count; i++) {
 
-                //Get InputAttribute and OutputAttribute
+                // 取 [Input]/[Output] 特性
                 object[] attribs = fieldInfo[i].GetCustomAttributes(true);
                 Node.InputAttribute inputAttrib = attribs.FirstOrDefault(x => x is Node.InputAttribute) as Node.InputAttribute;
                 Node.OutputAttribute outputAttrib = attribs.FirstOrDefault(x => x is Node.OutputAttribute) as Node.OutputAttribute;

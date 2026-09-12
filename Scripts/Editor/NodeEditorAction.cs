@@ -36,6 +36,7 @@ namespace XNodeEditor {
         [NonSerialized] private XNode.NodePort autoConnectOutput = null;
         [NonSerialized] private List<Vector2> draggedOutputReroutes = new List<Vector2>();
 
+        /// <summary> 当前鼠标悬停的重路由点引用；每帧在 DrawConnections 中重算 </summary>
         private RerouteReference hoveredReroute = new RerouteReference();
         public List<RerouteReference> selectedReroutes = new List<RerouteReference>();
         private Vector2 dragBoxStart;
@@ -46,6 +47,7 @@ namespace XNodeEditor {
         private Vector2 lastMousePosition;
         private float dragThreshold = 1f;
 
+        /// <summary> 画布交互总入口：处理拖拽文件、滚轮缩放、拖动节点/平移画布、选择、右键菜单与快捷键命令 </summary>
         public void Controls() {
             wantsMouseMove = true;
             Event e = Event.current;
@@ -59,19 +61,20 @@ namespace XNodeEditor {
                     }
                     break;
                 case EventType.MouseMove:
-                    //Keyboard commands will not get correct mouse position from Event
+                    // 键盘命令无法从 Event 拿到正确的鼠标位置，用 MouseMove 记录
                     lastMousePosition = e.mousePosition;
                     break;
                 case EventType.ScrollWheel:
                     float oldZoom = zoom;
                     if (e.delta.y > 0) zoom += 0.1f * zoom;
                     else zoom -= 0.1f * zoom;
+                    // 缩放锚定到鼠标位置（可在偏好设置关闭）
                     if (NodeEditorPreferences.GetSettings().zoomToMouse) panOffset += (1 - oldZoom / zoom) * (WindowToGridPosition(e.mousePosition) + panOffset);
                     break;
                 case EventType.MouseDrag:
                     if (e.button == 0) {
                         if (IsDraggingPort) {
-                            // Set target even if we can't connect, so as to prevent auto-conn menu from opening erroneously
+                            // 悬停在合法输入端口上就记录目标（即使不能连接也记录，避免误弹自动连接菜单）
                             if (IsHoveringPort && hoveredPort.IsInput && !draggedOutput.IsConnectedTo(hoveredPort)) {
                                 draggedOutputTarget = hoveredPort;
                             } else {
@@ -89,7 +92,7 @@ namespace XNodeEditor {
                             if (e.control) gridSnap = !gridSnap;
 
                             Vector2 mousePos = WindowToGridPosition(e.mousePosition);
-                            // Move selected nodes with offset
+                            // 按偏移量移动选中节点
                             for (int i = 0; i < Selection.objects.Length; i++) {
                                 if (Selection.objects[i] is XNode.Node) {
                                     XNode.Node node = Selection.objects[i] as XNode.Node;
@@ -101,7 +104,7 @@ namespace XNodeEditor {
                                         node.position.y = (Mathf.Round((node.position.y + 8) / 16) * 16) - 8;
                                     }
 
-                                    // Offset portConnectionPoints instantly if a node is dragged so they aren't delayed by a frame.
+                                    // 节点被拖动时立即平移端口锚点缓存，避免连线延迟一帧才跟随
                                     Vector2 offset = node.position - initial;
                                     if (offset.sqrMagnitude > 0) {
                                         foreach (XNode.NodePort output in node.Outputs) {
@@ -122,7 +125,7 @@ namespace XNodeEditor {
                                     }
                                 }
                             }
-                            // Move selected reroutes with offset
+                            // 按偏移量移动选中的重路由点
                             for (int i = 0; i < selectedReroutes.Count; i++) {
                                 Vector2 pos = mousePos + dragOffset[Selection.objects.Length + i];
                                 if (gridSnap) {
@@ -147,7 +150,7 @@ namespace XNodeEditor {
                             Repaint();
                         }
                     } else if (e.button == 1 || e.button == 2) {
-                        //check drag threshold for larger screens
+                        // 大屏幕下拖动阈值校验，避免点击误判为平移
                         if (e.delta.magnitude > dragThreshold) {
                             panOffset += e.delta * zoom;
                             isPanning = true;
@@ -161,9 +164,11 @@ namespace XNodeEditor {
 
                         if (IsHoveringPort) {
                             if (hoveredPort.IsOutput) {
+                                // 按住输出端口：开始拖线
                                 draggedOutput = hoveredPort;
                                 autoConnectOutput = hoveredPort;
                             } else {
+                                // 按住已连接的输入端口：把现有连线拽出来继续拖
                                 hoveredPort.VerifyConnections();
                                 autoConnectOutput = null;
                                 if (hoveredPort.IsConnected) {
@@ -178,35 +183,32 @@ namespace XNodeEditor {
                                 }
                             }
                         } else if (IsHoveringNode && IsHoveringTitle(hoveredNode)) {
-                            // If mousedown on node header, select or deselect
+                            // 按在节点标题栏上：处理选择/反选，双击状态记录到 MouseUp 再生效
                             if (!Selection.Contains(hoveredNode)) {
                                 SelectNode(hoveredNode, e.control || e.shift);
                                 if (!e.control && !e.shift) selectedReroutes.Clear();
                             } else if (e.control || e.shift) DeselectNode(hoveredNode);
 
-                            // Cache double click state, but only act on it in MouseUp - Except ClickCount only works in mouseDown.
+                            // clickCount 只在 MouseDown 有效，双击动作放到 MouseUp 处理
                             isDoubleClick = (e.clickCount == 2);
 
                             e.Use();
                             currentActivity = NodeActivity.HoldNode;
                         } else if (IsHoveringReroute) {
-                            // If reroute isn't selected
+                            // 按在重路由点上：处理选择/反选
                             if (!selectedReroutes.Contains(hoveredReroute)) {
-                                // Add it
                                 if (e.control || e.shift) selectedReroutes.Add(hoveredReroute);
-                                // Select it
                                 else {
                                     selectedReroutes = new List<RerouteReference>() { hoveredReroute };
                                     Selection.activeObject = null;
                                 }
 
                             }
-                            // Deselect
                             else if (e.control || e.shift) selectedReroutes.Remove(hoveredReroute);
                             e.Use();
                             currentActivity = NodeActivity.HoldNode;
                         }
-                        // If mousedown on grid background, deselect all
+                        // 按在画布空白处：开始框选或清除选择
                         else if (!IsHoveringNode) {
                             currentActivity = NodeActivity.HoldGrid;
                             if (!e.control && !e.shift) {
@@ -218,14 +220,14 @@ namespace XNodeEditor {
                     break;
                 case EventType.MouseUp:
                     if (e.button == 0) {
-                        //Port drag release
+                        // 拖线释放
                         if (IsDraggingPort) {
-                            // If connection is valid, save it
+                            // 目标合法则建立连接，并把拖线途中加的重路由点挂到新连线上
                             if (draggedOutputTarget != null && graphEditor.CanConnect(draggedOutput, draggedOutputTarget)) {
                                 XNode.Node node = draggedOutputTarget.node;
                                 if (graph.nodes.Count != 0) draggedOutput.Connect(draggedOutputTarget);
 
-                                // ConnectionIndex can be -1 if the connection is removed instantly after creation
+                                // 连接可能刚建立就被移除，此时索引为 -1
                                 int connectionIndex = draggedOutput.GetConnectionIndex(draggedOutputTarget);
                                 if (connectionIndex != -1) {
                                     draggedOutput.GetReroutePoints(connectionIndex).AddRange(draggedOutputReroutes);
@@ -233,13 +235,12 @@ namespace XNodeEditor {
                                     EditorUtility.SetDirty(graph);
                                 }
                             }
-                            // Open context menu for auto-connection if there is no target node
+                            // 拖到空白处：按偏好设置弹出"拖线创建节点"菜单
                             else if (draggedOutputTarget == null && NodeEditorPreferences.GetSettings().dragToCreate && autoConnectOutput != null) {
                                 GenericMenu menu = new GenericMenu();
                                 graphEditor.AddContextMenuItems(menu, draggedOutput.ValueType);
                                 menu.DropDown(new Rect(Event.current.mousePosition, Vector2.zero));
                             }
-                            //Release dragged connection
                             draggedOutput = null;
                             draggedOutputTarget = null;
                             EditorUtility.SetDirty(graph);
@@ -262,14 +263,13 @@ namespace XNodeEditor {
                             selectedReroutes.Clear();
                             SelectNode(hoveredNode, false);
 
-                            // Double click to center node
                             if (isDoubleClick) {
                                 Vector2 nodeDimension = nodeSizes.ContainsKey(hoveredNode) ? nodeSizes[hoveredNode] / 2 : Vector2.zero;
                                 panOffset = -hoveredNode.position - nodeDimension;
                             }
                         }
 
-                        // If click reroute, select it.
+                        // 点击重路由点：选中它
                         if (IsHoveringReroute && !(e.control || e.shift)) {
                             selectedReroutes = new List<RerouteReference>() { hoveredReroute };
                             Selection.activeObject = null;
@@ -280,6 +280,7 @@ namespace XNodeEditor {
                     } else if (e.button == 1 || e.button == 2) {
                         if (!isPanning) {
                             if (IsDraggingPort) {
+                                // 拖线中右键：在鼠标处添加重路由点
                                 draggedOutputReroutes.Add(WindowToGridPosition(e.mousePosition));
                             } else if (currentActivity == NodeActivity.DragNode && Selection.activeObject == null && selectedReroutes.Count == 1) {
                                 selectedReroutes[0].InsertPoint(selectedReroutes[0].GetPoint());
@@ -304,17 +305,19 @@ namespace XNodeEditor {
                         }
                         isPanning = false;
                     }
-                    // Reset DoubleClick
+                    // 重置双击状态
                     isDoubleClick = false;
                     break;
                 case EventType.KeyDown:
                     if (EditorGUIUtility.editingTextField || GUIUtility.keyboardControl != 0) break;
+                    // F 键：聚焦选中节点；F2/回车：重命名
                     else if (e.keyCode == KeyCode.F) Home();
                     if (NodeEditorUtilities.IsMac()) {
                         if (e.keyCode == KeyCode.Return) RenameSelectedNode();
                     } else {
                         if (e.keyCode == KeyCode.F2) RenameSelectedNode();
                     }
+                    // A 键：全选/取消全选本图节点
                     if (e.keyCode == KeyCode.A) {
                         if (Selection.objects.Any(x => graph.nodes.Contains(x as XNode.Node))) {
                             foreach (XNode.Node node in graph.nodes) {
@@ -372,13 +375,12 @@ namespace XNodeEditor {
                 }
             }
 
-            // Selected reroutes
             for (int i = 0; i < selectedReroutes.Count; i++) {
                 dragOffset[Selection.objects.Length + i] = selectedReroutes[i].GetPoint() - WindowToGridPosition(current.mousePosition);
             }
         }
 
-        /// <summary> Puts all selected nodes in focus. If no nodes are present, resets view and zoom to to origin </summary>
+        /// <summary> 把全部选中节点置于视野中心；无选中节点时重置视图与缩放到原点 </summary>
         public void Home() {
             var nodes = Selection.objects.Where(o => o is XNode.Node).Cast<XNode.Node>().ToList();
             if (nodes.Count > 0) {
@@ -391,7 +393,7 @@ namespace XNodeEditor {
             }
         }
 
-        /// <summary> Remove nodes in the graph in Selection.objects</summary>
+        /// <summary> 移除当前选中的节点与重路由点 </summary>
         public void RemoveSelectedNodes() {
             // We need to delete reroutes starting at the highest point index to avoid shifting indices
             selectedReroutes = selectedReroutes.OrderByDescending(x => x.pointIndex).ToList();
@@ -407,7 +409,7 @@ namespace XNodeEditor {
             }
         }
 
-        /// <summary> Initiate a rename on the currently selected node </summary>
+        /// <summary> 对当前选中的唯一节点发起重命名弹窗 </summary>
         public void RenameSelectedNode() {
             if (Selection.objects.Length == 1 && Selection.activeObject is XNode.Node) {
                 XNode.Node node = Selection.activeObject as XNode.Node;
@@ -420,7 +422,7 @@ namespace XNodeEditor {
             }
         }
 
-        /// <summary> Draw this node on top of other nodes by placing it last in the graph.nodes list </summary>
+        /// <summary> 把节点移到 graph.nodes 末尾，使其绘制在其它节点之上 </summary>
         public void MoveNodeToTop(XNode.Node node) {
             int index;
             while ((index = graph.nodes.IndexOf(node)) != graph.nodes.Count - 1) {
@@ -429,7 +431,7 @@ namespace XNodeEditor {
             }
         }
 
-        /// <summary> Duplicate selected nodes and select the duplicates </summary>
+        /// <summary> 复制选中节点并选中新副本 </summary>
         public void DuplicateSelectedNodes() {
             // Get selected nodes which are part of this graph
             XNode.Node[] selectedNodes = Selection.objects.Select(x => x as XNode.Node).Where(x => x != null && x.graph == graph).ToArray();
@@ -439,14 +441,17 @@ namespace XNodeEditor {
             InsertDuplicateNodes(selectedNodes, topLeftNode + new Vector2(30, 30));
         }
 
+        /// <summary> 把选中节点复制进剪贴缓冲 </summary>
         public void CopySelectedNodes() {
             copyBuffer = Selection.objects.Select(x => x as XNode.Node).Where(x => x != null && x.graph == graph).ToArray();
         }
 
+        /// <summary> 把剪贴缓冲中的节点粘贴到指定位置 </summary>
         public void PasteNodes(Vector2 pos) {
             InsertDuplicateNodes(copyBuffer, pos);
         }
 
+        /// <summary> 复制一组节点到偏移位置并重建内部连接；受 DisallowMultipleNodes 限制的类型跳过 </summary>
         private void InsertDuplicateNodes(XNode.Node[] nodes, Vector2 topLeft) {
             if (nodes == null || nodes.Length == 0) return;
 
@@ -460,7 +465,7 @@ namespace XNodeEditor {
                 XNode.Node srcNode = nodes[i];
                 if (srcNode == null) continue;
 
-                // Check if user is allowed to add more of given node type
+                // 检查该类型节点是否已达数量上限
                 XNode.Node.DisallowMultipleNodesAttribute disallowAttrib;
                 Type nodeType = srcNode.GetType();
                 if (NodeEditorUtilities.GetAttrib(nodeType, out disallowAttrib)) {
@@ -474,7 +479,7 @@ namespace XNodeEditor {
                 newNodes[i] = newNode;
             }
 
-            // Walk through the selected nodes again, recreate connections, using the new nodes
+            // 再遍历一轮，按新旧节点映射重建连接
             for (int i = 0; i < nodes.Length; i++) {
                 XNode.Node srcNode = nodes[i];
                 if (srcNode == null) continue;
@@ -495,11 +500,11 @@ namespace XNodeEditor {
                 }
             }
             EditorUtility.SetDirty(graph);
-            // Select the new nodes
+            // 选中新节点
             Selection.objects = newNodes;
         }
 
-        /// <summary> Draw a connection as we are dragging it </summary>
+        /// <summary> 绘制正在拖拽中的连线 </summary>
         public void DrawDraggedConnection() {
             if (IsDraggingPort) {
                 Gradient gradient = graphEditor.GetNoodleGradient(draggedOutput, null);
@@ -507,6 +512,7 @@ namespace XNodeEditor {
                 NoodlePath path = graphEditor.GetNoodlePath(draggedOutput, null);
                 NoodleStroke stroke = graphEditor.GetNoodleStroke(draggedOutput, null);
 
+                // 拖线的路径点：起点锚点 + 途中重路由点 + 鼠标/目标端口
                 Rect fromRect;
                 if (!_portConnectionPoints.TryGetValue(draggedOutput, out fromRect)) return;
                 List<Vector2> gridPoints = new List<Vector2>();
@@ -525,9 +531,8 @@ namespace XNodeEditor {
                 bgcol.a = 0.6f;
                 frcol.a = 0.6f;
 
-                // Loop through reroute points again and draw the points
+                // 重绘拖线上的重路由点
                 for (int i = 0; i < draggedOutputReroutes.Count; i++) {
-                    // Draw reroute point at position
                     Rect rect = new Rect(draggedOutputReroutes[i], new Vector2(16, 16));
                     rect.position = new Vector2(rect.position.x - 8, rect.position.y - 8);
                     rect = GridToWindowRect(rect);
@@ -537,9 +542,9 @@ namespace XNodeEditor {
             }
         }
 
+        /// <summary> 鼠标是否悬停在节点标题栏上 </summary>
         bool IsHoveringTitle(XNode.Node node) {
             Vector2 mousePos = Event.current.mousePosition;
-            //Get node position
             Vector2 nodePos = GridToWindowPosition(node.position);
             float width;
             Vector2 size;
@@ -549,7 +554,7 @@ namespace XNodeEditor {
             return windowRect.Contains(mousePos);
         }
 
-        /// <summary> Attempt to connect dragged output to target node </summary>
+        /// <summary> 新建节点落在画布上时，尝试把它自动连到拖线起点对应的输入端口 </summary>
         public void AutoConnect(XNode.Node node) {
             if (autoConnectOutput == null) return;
 
@@ -557,7 +562,6 @@ namespace XNodeEditor {
             XNode.NodePort inputPort = node.Ports.FirstOrDefault(x => x.IsInput && graphEditor.CanConnect(autoConnectOutput, x));
             if (inputPort != null) autoConnectOutput.Connect(inputPort);
 
-            // Save changes
             EditorUtility.SetDirty(graph);
             if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
             autoConnectOutput = null;

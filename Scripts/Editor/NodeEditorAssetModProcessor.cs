@@ -3,28 +3,28 @@ using UnityEngine;
 using System.IO;
 
 namespace XNodeEditor {
-    /// <summary> Deals with modified assets </summary>
+    /// <summary> 处理资产修改事件 </summary>
     class NodeEditorAssetModProcessor : UnityEditor.AssetModificationProcessor {
 
-        /// <summary> Automatically delete Node sub-assets before deleting their script.
-        /// This is important to do, because you can't delete null sub assets.
-        /// <para/> For another workaround, see: https://gitlab.com/RotaryHeart-UnityShare/subassetmissingscriptdelete </summary> 
+        /// <summary> 删除节点脚本前自动删除其节点子资产。
+        /// 这一步很关键，因为 null 子资产无法手动删除。
+        /// <para/> 其它变通方案见: https://gitlab.com/RotaryHeart-UnityShare/subassetmissingscriptdelete </summary>
         private static AssetDeleteResult OnWillDeleteAsset (string path, RemoveAssetOptions options) {
-            // Skip processing anything without the .cs extension
+            // 跳过非 .cs 文件
             if (Path.GetExtension(path) != ".cs") return AssetDeleteResult.DidNotDelete;
-            
-            // Get the object that is requested for deletion
+
+            // 取要删除的对象
             UnityEngine.Object obj = AssetDatabase.LoadAssetAtPath<UnityEngine.Object> (path);
 
-            // If we aren't deleting a script, return
+            // 不是脚本则跳过
             if (!(obj is UnityEditor.MonoScript)) return AssetDeleteResult.DidNotDelete;
 
-            // Check script type. Return if deleting a non-node script
+            // 校验脚本类型：非 Node 脚本直接放行
             UnityEditor.MonoScript script = obj as UnityEditor.MonoScript;
             System.Type scriptType = script.GetClass ();
             if (scriptType == null || (scriptType != typeof (XNode.Node) && !scriptType.IsSubclassOf (typeof (XNode.Node)))) return AssetDeleteResult.DidNotDelete;
 
-            // Find all ScriptableObjects using this script
+            // 找到所有使用该脚本的 ScriptableObject
             string[] guids = AssetDatabase.FindAssets ("t:" + scriptType);
             for (int i = 0; i < guids.Length; i++) {
                 string assetpath = AssetDatabase.GUIDToAssetPath (guids[i]);
@@ -40,21 +40,21 @@ namespace XNodeEditor {
                     }
                 }
             }
-            // We didn't actually delete the script. Tell the internal system to carry on with normal deletion procedure
+            // 本处理器没有真正删除脚本，交回系统继续正常删除流程
             return AssetDeleteResult.DidNotDelete;
         }
 
-        /// <summary> Automatically re-add loose node assets to the Graph node list </summary>
+        /// <summary> 编辑器重载后，自动把游离的节点子资产补回图的节点列表 </summary>
         [InitializeOnLoadMethod]
         private static void OnReloadEditor () {
-            // Find all NodeGraph assets
+            // 查找全部 NodeGraph 资产
             string[] guids = AssetDatabase.FindAssets ("t:" + typeof (XNode.NodeGraph));
             for (int i = 0; i < guids.Length; i++) {
                 string assetpath = AssetDatabase.GUIDToAssetPath (guids[i]);
                 XNode.NodeGraph graph = AssetDatabase.LoadAssetAtPath (assetpath, typeof (XNode.NodeGraph)) as XNode.NodeGraph;
                 graph.nodes.RemoveAll(x => x == null); //Remove null items
                 Object[] objs = AssetDatabase.LoadAllAssetRepresentationsAtPath (assetpath);
-                // Ensure that all sub node assets are present in the graph node list
+                // 确保全部节点子资产都在图的节点列表里
                 for (int u = 0; u < objs.Length; u++) {
                     // Ignore null sub assets
                     if (objs[u] == null) continue;

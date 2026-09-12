@@ -7,18 +7,19 @@ using UnityEngine;
 using XNode;
 
 namespace XNodeEditor {
-    /// <summary> Deals with modified assets </summary>
+    /// <summary> 处理被修改的资产 </summary>
     class NodeGraphImporter : AssetPostprocessor {
+        /// <summary> 资产导入后处理：检查图类型上的 [RequireNode] 特性，补建缺失的必需节点 </summary>
         private static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths) {
             foreach (string path in importedAssets) {
-                // Skip processing anything without the .asset extension
+                // 跳过非 .asset 文件
                 if (Path.GetExtension(path) != ".asset") continue;
 
-                // Get the object that is requested for deletion
+                // 加载本次导入的资产
                 NodeGraph graph = AssetDatabase.LoadAssetAtPath<NodeGraph>(path);
                 if (graph == null) continue;
 
-                // Get attributes
+                // 取 RequireNode 特性
                 Type graphType = graph.GetType();
                 NodeGraph.RequireNodeAttribute[] attribs = Array.ConvertAll(
                     graphType.GetCustomAttributes(typeof(NodeGraph.RequireNodeAttribute), true), x => x as NodeGraph.RequireNodeAttribute);
@@ -32,6 +33,7 @@ namespace XNodeEditor {
             }
         }
 
+        /// <summary> 图中不存在该类型的节点时在 position 处补建一个，命名并挂为图资产的子资产 </summary>
         private static void AddRequired(NodeGraph graph, Type type, ref Vector2 position) {
             if (!graph.nodes.Any(x => x.GetType() == type)) {
                 XNode.Node node = graph.AddNode(type);

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -9,16 +9,16 @@ using UnityEngine;
 using Object = UnityEngine.Object;
 
 namespace XNodeEditor {
-    /// <summary> A set of editor-only utilities and extensions for xNode </summary>
+    /// <summary> xNode 专用的编辑器工具集与扩展方法 </summary>
     public static class NodeEditorUtilities {
 
-        /// <summary>C#'s Script Icon [The one MonoBhevaiour Scripts have].</summary>
+        /// <summary>C# 脚本图标[即 MonoBehaviour 脚本所用的那个图标]。</summary>
         private static Texture2D scriptIcon = (EditorGUIUtility.IconContent("cs Script Icon").image as Texture2D);
 
-        /// Saves Attribute from Type+Field for faster lookup. Resets on recompiles.
+        /// 缓存 类型+字段 对应的特性以便快速查找。重新编译后重置。
         private static Dictionary<Type, Dictionary<string, Dictionary<Type, Attribute>>> typeAttributes = new Dictionary<Type, Dictionary<string, Dictionary<Type, Attribute>>>();
 
-        /// Saves ordered PropertyAttribute from Type+Field for faster lookup. Resets on recompiles.
+        /// 缓存 类型+字段 对应的有序 PropertyAttribute 以便快速查找。重新编译后重置。
         private static Dictionary<Type, Dictionary<string, List<PropertyAttribute>>> typeOrderedPropertyAttributes = new Dictionary<Type, Dictionary<string, List<PropertyAttribute>>>();
 
         public static bool GetAttrib<T>(Type classType, out T attribOut) where T : Attribute {
@@ -38,9 +38,9 @@ namespace XNodeEditor {
         }
 
         public static bool GetAttrib<T>(Type classType, string fieldName, out T attribOut) where T : Attribute {
-            // If we can't find field in the first run, it's probably a private field in a base class.
+            // 如果第一轮找不到字段，那它很可能是基类中的私有字段。
             FieldInfo field = classType.GetFieldInfo(fieldName);
-            // This shouldn't happen. Ever.
+            // 这种情况按理不应发生。
             if (field == null) {
                 Debug.LogWarning("Field " + fieldName + " couldnt be found");
                 attribOut = null;
@@ -89,6 +89,10 @@ namespace XNodeEditor {
             return true;
         }
 
+        /// <summary>
+        /// 取字段上全部 PropertyAttribute 的有序缓存列表（按 Unity 的绘制顺序反转存储）；
+        /// 首次访问某字段时反射收集并缓存，之后复用。
+        /// </summary>
         public static List<PropertyAttribute> GetCachedPropertyAttribs(Type classType, string fieldName) {
             Dictionary<string, List<PropertyAttribute>> typeFields;
             if (!typeOrderedPropertyAttributes.TryGetValue(classType, out typeFields)) {
@@ -107,6 +111,7 @@ namespace XNodeEditor {
             return typeAttributes;
         }
 
+        /// <summary> 当前系统是否为 macOS（用于区分重命名/删除快捷键） </summary>
         public static bool IsMac() {
 #if UNITY_2017_1_OR_NEWER
             return SystemInfo.operatingSystemFamily == OperatingSystemFamily.MacOSX;
@@ -115,7 +120,7 @@ namespace XNodeEditor {
 #endif
         }
 
-        /// <summary> Returns true if this can be casted to <see cref="Type"/></summary>
+        /// <summary> 判断 from 类型能否赋值/转换为 to 类型 </summary>
         public static bool IsCastableTo(this Type from, Type to) {
             if (to.IsAssignableFrom(from)) return true;
             var methods = from.GetMethods(BindingFlags.Public | BindingFlags.Static)
@@ -128,10 +133,10 @@ namespace XNodeEditor {
         }
 
         /// <summary>
-        /// Looking for ports with value Type compatible with a given type. 
+        /// 查找值类型与指定类型兼容的端口。
         /// </summary>
-        /// <param name="nodeType">Node to search</param>
-        /// <param name="compatibleType">Type to find compatiblities</param>
+        /// <param name="nodeType">要搜索的节点类型</param>
+        /// <param name="compatibleType">要匹配的兼容类型</param>
         /// <param name="direction"></param>
         /// <returns>True if NodeType has some port with value type compatible</returns>
         public static bool HasCompatiblePortType(Type nodeType, Type compatibleType, XNode.NodePort.IO direction = XNode.NodePort.IO.Input) {
@@ -139,8 +144,8 @@ namespace XNodeEditor {
             if (direction == XNode.NodePort.IO.Output)
                 findType = typeof(XNode.Node.OutputAttribute);
 
-            //Get All fields from node type and we go filter only field with portAttribute.
-            //This way is possible to know the values of the all ports and if have some with compatible value tue
+            // 遍历节点类型的全部字段，只保留带端口特性的字段，
+            // 由此得知各端口的值类型并检查是否存在兼容类型
             foreach (FieldInfo f in XNode.NodeDataCache.GetNodeFields(nodeType)) {
                 var portAttribute = f.GetCustomAttributes(findType, false).FirstOrDefault();
                 if (portAttribute != null) {
@@ -154,7 +159,7 @@ namespace XNodeEditor {
         }
 
         /// <summary>
-        /// Filter only node types that contains some port value type compatible with an given type
+        /// 只保留端口值类型与指定类型兼容的节点类型。
         /// </summary>
         /// <param name="nodeTypes">List with all nodes type to filter</param>
         /// <param name="compatibleType">Compatible Type to Filter</param>
@@ -163,11 +168,11 @@ namespace XNodeEditor {
             //Result List
             List<Type> filteredTypes = new List<Type>();
 
-            //Return empty list
+            // 参数无效时返回空列表
             if (nodeTypes == null) { return filteredTypes; }
             if (compatibleType == null) { return filteredTypes; }
 
-            //Find compatiblity
+            // 逐个类型检查兼容性
             foreach (Type findType in nodeTypes) {
                 if (HasCompatiblePortType(findType, compatibleType, direction)) {
                     filteredTypes.Add(findType);
@@ -178,7 +183,7 @@ namespace XNodeEditor {
         }
 
 
-        /// <summary> Return a prettiefied type name. </summary>
+        /// <summary> 返回美化后的类型名 </summary>
         public static string PrettyName(this Type type) {
             if (type == null) return "null";
             if (type == typeof(System.Object)) return "object";
@@ -215,25 +220,25 @@ namespace XNodeEditor {
             } else return type.ToString();
         }
 
-        /// <summary> Returns the default name for the node type. </summary>
+        /// <summary> 返回节点类型的默认名。 </summary>
         public static string NodeDefaultName(Type type) {
             string typeName = type.Name;
-            // Automatically remove redundant 'Node' postfix
+            // 自动去掉冗余的 'Node' 后缀
             if (typeName.EndsWith("Node")) typeName = typeName.Substring(0, typeName.LastIndexOf("Node"));
             typeName = UnityEditor.ObjectNames.NicifyVariableName(typeName);
             return typeName;
         }
 
-        /// <summary> Returns the default creation path for the node type. </summary>
+        /// <summary> 返回节点类型的默认创建菜单路径。 </summary>
         public static string NodeDefaultPath(Type type) {
             string typePath = type.ToString().Replace('.', '/');
-            // Automatically remove redundant 'Node' postfix
+            // 自动去掉冗余的 'Node' 后缀
             if (typePath.EndsWith("Node")) typePath = typePath.Substring(0, typePath.LastIndexOf("Node"));
             typePath = UnityEditor.ObjectNames.NicifyVariableName(typePath);
             return typePath;
         }
 
-        /// <summary>Creates a new C# Class.</summary>
+        /// <summary>按模板创建新的 C# 类文件。</summary>
         [MenuItem("Assets/Create/xNode/Node C# Script", false, 89)]
         private static void CreateNode() {
             string[] guids = AssetDatabase.FindAssets("xNode_NodeTemplate.cs");
@@ -248,7 +253,7 @@ namespace XNodeEditor {
             );
         }
 
-        /// <summary>Creates a new C# Class.</summary>
+        /// <summary>按模板创建新的 C# 图类文件。</summary>
         [MenuItem("Assets/Create/xNode/NodeGraph C# Script", false, 89)]
         private static void CreateGraph() {
             string[] guids = AssetDatabase.FindAssets("xNode_NodeGraphTemplate.cs");
@@ -263,6 +268,7 @@ namespace XNodeEditor {
             );
         }
 
+        /// <summary> 启动项目窗口内置的"输入文件名"流程，按模板创建脚本；Unity 6 走 EntityId 版回调 </summary>
         public static void CreateFromTemplate(string initialName, string templatePath) {
             ProjectWindowUtil.StartNameEditingIfProjectWindowExists(
                 0,
@@ -275,13 +281,14 @@ namespace XNodeEditor {
 
         /// Inherits from EndNameAction, must override EndNameAction.Action
         public class DoCreateCodeFile : UnityEditor.ProjectWindowCallback.EndNameEditAction {
+            /// <summary> 用户确认文件名后执行：按模板写出脚本并选中新资产 </summary>
             public override void Action(int instanceId, string pathName, string resourceFile) {
                 Object o = CreateScript(pathName, resourceFile);
                 ProjectWindowUtil.ShowCreatedAsset(o);
             }
         }
 
-        /// <summary>Creates Script from Template's path.</summary>
+        /// <summary>按模板路径创建脚本。</summary>
         internal static UnityEngine.Object CreateScript(string pathName, string templatePath) {
             string className = Path.GetFileNameWithoutExtension(pathName).Replace(" ", string.Empty);
             string templateText = string.Empty;
@@ -289,19 +296,17 @@ namespace XNodeEditor {
             UTF8Encoding encoding = new UTF8Encoding(true, false);
 
             if (File.Exists(templatePath)) {
-                /// Read procedures.
+                // 读取模板
                 StreamReader reader = new StreamReader(templatePath);
                 templateText = reader.ReadToEnd();
                 reader.Close();
 
                 templateText = templateText.Replace("#SCRIPTNAME#", className);
                 templateText = templateText.Replace("#NOTRIM#", string.Empty);
-                /// You can replace as many tags you make on your templates, just repeat Replace function
-                /// e.g.:
-                /// templateText = templateText.Replace("#NEWTAG#", "MyText");
+                // 需要更多占位符就继续追加 Replace
+                // 例如: templateText = templateText.Replace("#NEWTAG#", "MyText");
 
-                /// Write procedures.
-
+                // 写出文件
                 StreamWriter writer = new StreamWriter(Path.GetFullPath(pathName), false, encoding);
                 writer.Write(templateText);
                 writer.Close();

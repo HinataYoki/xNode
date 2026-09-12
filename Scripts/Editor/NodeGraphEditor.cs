@@ -7,41 +7,44 @@ using GenericMenu = XNodeEditor.AdvancedGenericMenu;
 #endif
 
 namespace XNodeEditor {
-    /// <summary> Base class to derive custom Node Graph editors from. Use this to override how graphs are drawn in the editor. </summary>
+    /// <summary> 自定义节点图编辑器的基类。继承它可覆盖图在编辑器中的绘制方式。 </summary>
     [CustomNodeGraphEditor(typeof(XNode.NodeGraph))]
     public class NodeGraphEditor : XNodeEditor.Internal.NodeEditorBase<NodeGraphEditor, NodeGraphEditor.CustomNodeGraphEditorAttribute, XNode.NodeGraph> {
         [Obsolete("Use window.position instead")]
         public Rect position { get { return window.position; } set { window.position = value; } }
-        /// <summary> Are we currently renaming a node? </summary>
+        /// <summary> 当前是否正在重命名节点？ </summary>
         protected bool isRenaming;
 
+        /// <summary> 节点绘制完成后的画布级自定义绘制钩子；在网格与节点之后执行 </summary>
         public virtual void OnGUI() { }
 
-        /// <summary> Called when opened by NodeEditorWindow </summary>
+        /// <summary> 被 NodeEditorWindow 打开时调用 </summary>
         public virtual void OnOpen() { }
 
-        /// <summary> Called when NodeEditorWindow gains focus </summary>
+        /// <summary> NodeEditorWindow 获得焦点时调用 </summary>
         public virtual void OnWindowFocus() { }
 
-        /// <summary> Called when NodeEditorWindow loses focus </summary>
+        /// <summary> NodeEditorWindow 失去焦点时调用 </summary>
         public virtual void OnWindowFocusLost() { }
 
+        /// <summary> 主网格平铺纹理，默认取偏好设置生成的网格纹理 </summary>
         public virtual Texture2D GetGridTexture() {
             return NodeEditorPreferences.GetSettings().gridTexture;
         }
 
+        /// <summary> 网格交叉点纹理，与主网格叠绘形成大格小格 </summary>
         public virtual Texture2D GetSecondaryGridTexture() {
             return NodeEditorPreferences.GetSettings().crossTexture;
         }
 
-        /// <summary> Return default settings for this graph type. This is the settings the user will load if no previous settings have been saved. </summary>
+        /// <summary> 返回该图类型的默认设置。用户从未保存过设置时将加载此设置。 </summary>
         public virtual NodeEditorPreferences.Settings GetDefaultPreferences() {
             return new NodeEditorPreferences.Settings();
         }
 
-        /// <summary> Returns context node menu path. Null or empty strings for hidden nodes. </summary>
+        /// <summary> 返回节点的上下文菜单路径。返回 null 或空字符串则隐藏该节点。 </summary>
         public virtual string GetNodeMenuName(Type type) {
-            //Check if type has the CreateNodeMenuAttribute
+            //检查类型是否带有 CreateNodeMenuAttribute
             XNode.Node.CreateNodeMenuAttribute attrib;
             if (NodeEditorUtilities.GetAttrib(type, out attrib)) // Return custom path
                 return attrib.menuName;
@@ -49,9 +52,9 @@ namespace XNodeEditor {
                 return NodeEditorUtilities.NodeDefaultPath(type);
         }
 
-        /// <summary> The order by which the menu items are displayed. </summary>
+        /// <summary> 菜单项的显示顺序。 </summary>
         public virtual int GetNodeMenuOrder(Type type) {
-            //Check if type has the CreateNodeMenuAttribute
+            //检查类型是否带有 CreateNodeMenuAttribute
             XNode.Node.CreateNodeMenuAttribute attrib;
             if (NodeEditorUtilities.GetAttrib(type, out attrib)) // Return custom path
                 return attrib.order;
@@ -60,15 +63,15 @@ namespace XNodeEditor {
         }
 
         /// <summary>
-        /// Called before connecting two ports in the graph view to see if the output port is compatible with the input port
+        /// 在图视图中连接两个端口前调用，用于判断输出端口与输入端口是否兼容
         /// </summary>
         public virtual bool CanConnect(XNode.NodePort output, XNode.NodePort input) {
             return output.CanConnectTo(input);
         }
 
         /// <summary>
-        /// Add items for the context menu when right-clicking this node.
-        /// Override to add custom menu items.
+        /// 右键点击节点时向上下文菜单添加菜单项。
+        /// 可重写此方法以添加自定义菜单项。
         /// </summary>
         /// <param name="menu"></param>
         /// <param name="compatibleType">Use it to filter only nodes with ports value type, compatible with this type</param>
@@ -87,11 +90,11 @@ namespace XNodeEditor {
             for (int i = 0; i < nodeTypes.Length; i++) {
                 Type type = nodeTypes[i];
 
-                //Get node context menu path
+                //获取节点的上下文菜单路径
                 string path = GetNodeMenuName(type);
                 if (string.IsNullOrEmpty(path)) continue;
 
-                // Check if user is allowed to add more of given node type
+                //检查是否还允许添加更多该类型的节点
                 XNode.Node.DisallowMultipleNodesAttribute disallowAttrib;
                 bool disallowed = false;
                 if (NodeEditorUtilities.GetAttrib(type, out disallowAttrib)) {
@@ -99,7 +102,7 @@ namespace XNodeEditor {
                     if (typeCount >= disallowAttrib.max) disallowed = true;
                 }
 
-                // Add node entry to context menu
+                //将节点条目添加到上下文菜单
                 if (disallowed) menu.AddItem(new GUIContent(path), false, null);
                 else menu.AddItem(new GUIContent(path), false, () => {
                     XNode.Node node = CreateNode(type, pos);
@@ -119,7 +122,7 @@ namespace XNodeEditor {
         public virtual Gradient GetNoodleGradient(XNode.NodePort output, XNode.NodePort input) {
             Gradient grad = new Gradient();
 
-            // If dragging the noodle, draw solid, slightly transparent
+            //拖拽连线时绘制纯色并略微透明
             if (input == null) {
                 Color a = GetTypeColor(output.ValueType);
                 grad.SetKeys(
@@ -127,11 +130,11 @@ namespace XNodeEditor {
                     new GradientAlphaKey[] { new GradientAlphaKey(0.6f, 0f) }
                 );
             }
-            // If normal, draw gradient fading from one input color to the other
+            //正常连接时绘制从一个端口颜色渐变到另一个端口颜色
             else {
                 Color a = GetTypeColor(output.ValueType);
                 Color b = GetTypeColor(input.ValueType);
-                // If any port is hovered, tint white
+                //任一端口被悬停时向白色渲染
                 if (window.hoveredPort == output || window.hoveredPort == input) {
                     a = Color.Lerp(a, Color.white, 0.8f);
                     b = Color.Lerp(b, Color.white, 0.8f);
@@ -144,35 +147,37 @@ namespace XNodeEditor {
             return grad;
         }
 
-        /// <summary> Returned float is used for noodle thickness </summary>
-        /// <param name="output"> The output this noodle comes from. Never null. </param>
-        /// <param name="input"> The output this noodle comes from. Can be null if we are dragging the noodle. </param>
+        /// <summary> 返回的浮点值用作连线粗细 </summary>
+        /// <param name="output"> 连线的来源输出端口，永不为 null。 </param>
+        /// <param name="input"> 连线的目标输入端口，拖拽连线时可为 null。 </param>
         public virtual float GetNoodleThickness(XNode.NodePort output, XNode.NodePort input) {
             return NodeEditorPreferences.GetSettings().noodleThickness;
         }
 
+        /// <summary> 连线的路径样式（曲线/直线/折线/ShaderLab 风格），默认取偏好设置 </summary>
         public virtual NoodlePath GetNoodlePath(XNode.NodePort output, XNode.NodePort input) {
             return NodeEditorPreferences.GetSettings().noodlePath;
         }
 
+        /// <summary> 连线描边（实线/虚线），默认取偏好设置 </summary>
         public virtual NoodleStroke GetNoodleStroke(XNode.NodePort output, XNode.NodePort input) {
             return NodeEditorPreferences.GetSettings().noodleStroke;
         }
 
-        /// <summary> Returned color is used to color ports </summary>
+        /// <summary> 返回的颜色用于给端口上色 </summary>
         public virtual Color GetPortColor(XNode.NodePort port) {
             return GetTypeColor(port.ValueType);
         }
 
         /// <summary>
-        /// The returned Style is used to configure the paddings and icon texture of the ports.
-        /// Use these properties to customize your port style.
+        /// 返回的样式用于配置端口的内边距与图标纹理。
+        /// 可通过这些属性自定义端口样式。
         ///
-        /// The properties used is:
-        /// <see cref="GUIStyle.padding"/>[Left and Right], <see cref="GUIStyle.normal"/> [Background] = border texture,
-        /// and <seealso cref="GUIStyle.active"/> [Background] = dot texture;
+        /// 用到的属性有：
+        /// <see cref="GUIStyle.padding"/>[Left 和 Right]、<see cref="GUIStyle.normal"/> [Background] = 边框纹理，
+        /// 以及 <seealso cref="GUIStyle.active"/> [Background] = 圆点纹理；
         /// </summary>
-        /// <param name="port">the owner of the style</param>
+        /// <param name="port">样式的归属端口</param>
         /// <returns></returns>
         public virtual GUIStyle GetPortStyle(XNode.NodePort port) {
             if (port.direction == XNode.NodePort.IO.Input)
@@ -181,18 +186,18 @@ namespace XNodeEditor {
             return NodeEditorResources.styles.outputPort;
         }
 
-        /// <summary> The returned color is used to color the background of the door.
-        /// Usually used for outer edge effect </summary>
+        /// <summary> 返回的颜色用于给端口背景上色。
+        /// 通常用于外边缘效果 </summary>
         public virtual Color GetPortBackgroundColor(XNode.NodePort port) {
             return Color.gray;
         }
 
-        /// <summary> Returns generated color for a type. This color is editable in preferences </summary>
+        /// <summary> 返回为某类型生成的颜色。该颜色可在偏好设置中修改 </summary>
         public virtual Color GetTypeColor(Type type) {
             return NodeEditorPreferences.GetTypeColor(type);
         }
 
-        /// <summary> Override to display custom tooltips </summary>
+        /// <summary> 重写此方法以显示自定义工具提示 </summary>
         public virtual string GetPortTooltip(XNode.NodePort port) {
             Type portType = port.ValueType;
             string tooltip = "";
@@ -204,12 +209,12 @@ namespace XNodeEditor {
             return tooltip;
         }
 
-        /// <summary> Deal with objects dropped into the graph through DragAndDrop </summary>
+        /// <summary> 处理通过 DragAndDrop 拖入图中的对象 </summary>
         public virtual void OnDropObjects(UnityEngine.Object[] objects) {
             if (GetType() != typeof(NodeGraphEditor)) Debug.Log("No OnDropObjects override defined for " + GetType());
         }
 
-        /// <summary> Create a node and save it in the graph asset </summary>
+        /// <summary> 创建节点并保存到图资源中 </summary>
         public virtual XNode.Node CreateNode(Type type, Vector2 position) {
             Undo.RecordObject(target, "Create Node");
             XNode.Node node = target.AddNode(type);
@@ -223,7 +228,7 @@ namespace XNodeEditor {
             return node;
         }
 
-        /// <summary> Creates a copy of the original node in the graph </summary>
+        /// <summary> 在图中创建原节点的副本 </summary>
         public virtual XNode.Node CopyNode(XNode.Node original) {
             Undo.RecordObject(target, "Duplicate Node");
             XNode.Node node = target.CopyNode(original);
@@ -234,9 +239,9 @@ namespace XNodeEditor {
             return node;
         }
 
-        /// <summary> Return false for nodes that can't be removed </summary>
+        /// <summary> 对不可移除的节点返回 false </summary>
         public virtual bool CanRemove(XNode.Node node) {
-            // Check graph attributes to see if this node is required
+            //检查图上的特性，判断该节点是否为必需节点
             Type graphType = target.GetType();
             XNode.NodeGraph.RequireNodeAttribute[] attribs = Array.ConvertAll(
                 graphType.GetCustomAttributes(typeof(XNode.NodeGraph.RequireNodeAttribute), true), x => x as XNode.NodeGraph.RequireNodeAttribute);
@@ -248,11 +253,11 @@ namespace XNodeEditor {
             return true;
         }
 
-        /// <summary> Safely remove a node and all its connections. </summary>
+        /// <summary> 安全移除节点及其所有连接。 </summary>
         public virtual void RemoveNode(XNode.Node node) {
             if (!CanRemove(node)) return;
 
-            // Remove the node
+            //移除节点
             Undo.RecordObject(node, "Delete Node");
             Undo.RecordObject(target, "Delete Node");
             foreach (var port in node.Ports)
@@ -268,14 +273,15 @@ namespace XNodeEditor {
         XNodeEditor.Internal.NodeEditorBase<NodeGraphEditor, NodeGraphEditor.CustomNodeGraphEditorAttribute, XNode.NodeGraph>.INodeEditorAttrib {
             private Type inspectedType;
             public string editorPrefsKey;
-            /// <summary> Tells a NodeGraphEditor which Graph type it is an editor for </summary>
-            /// <param name="inspectedType">Type that this editor can edit</param>
-            /// <param name="editorPrefsKey">Define unique key for unique layout settings instance</param>
+            /// <summary> 指明该 NodeGraphEditor 是哪种图类型的编辑器 </summary>
+            /// <param name="inspectedType">此编辑器可编辑的类型</param>
+            /// <param name="editorPrefsKey">为独立的布局设置实例定义唯一键</param>
             public CustomNodeGraphEditorAttribute(Type inspectedType, string editorPrefsKey = "xNode.Settings") {
                 this.inspectedType = inspectedType;
                 this.editorPrefsKey = editorPrefsKey;
             }
 
+            /// <summary> 返回本特性声明的图类型；NodeEditorBase 靠它建立 图类型 -> 编辑器类型 映射 </summary>
             public Type GetInspectedType() {
                 return inspectedType;
             }

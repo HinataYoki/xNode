@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,7 +8,7 @@ using UnityEditorInternal;
 using UnityEngine;
 
 namespace XNodeEditor {
-    /// <summary> xNode-specific version of <see cref="EditorGUILayout"/> </summary>
+    /// <summary> xNode 专用的 <see cref="EditorGUILayout"/> 扩展 </summary>
     public static class NodeEditorGUILayout {
 
         private static readonly Dictionary<UnityEngine.Object, Dictionary<string, ReorderableList>> reorderableListCache = new Dictionary<UnityEngine.Object, Dictionary<string, ReorderableList>>();
@@ -19,7 +19,7 @@ namespace XNodeEditor {
             PropertyField(property, (GUIContent)null, includeChildren, options);
         }
 
-        /// <summary> Make a field for a serialized property. Automatically displays relevant node port. </summary>
+        /// <summary> 为序列化属性绘制字段，自动在对应位置显示节点端口 </summary>
         public static void PropertyField(SerializedProperty property, GUIContent label, bool includeChildren = true, params GUILayoutOption[] options) {
             if (property == null) throw new NullReferenceException();
             XNode.Node node = property.serializedObject.targetObject as XNode.Node;
@@ -27,12 +27,12 @@ namespace XNodeEditor {
             PropertyField(property, label, port, includeChildren);
         }
 
-        /// <summary> Make a field for a serialized property. Manual node port override. </summary>
+        /// <summary> 为序列化属性绘制字段，手动指定端口 </summary>
         public static void PropertyField(SerializedProperty property, XNode.NodePort port, bool includeChildren = true, params GUILayoutOption[] options) {
             PropertyField(property, null, port, includeChildren, options);
         }
 
-        /// <summary> Make a field for a serialized property. Manual node port override. </summary>
+        /// <summary> 为序列化属性绘制字段，手动指定端口 </summary>
         public static void PropertyField(SerializedProperty property, GUIContent label, XNode.NodePort port, bool includeChildren = true, params GUILayoutOption[] options) {
             if (property == null) throw new NullReferenceException();
 
@@ -43,9 +43,9 @@ namespace XNodeEditor {
 
                 List<PropertyAttribute> propertyAttributes = NodeEditorUtilities.GetCachedPropertyAttribs(port.node.GetType(), property.name);
 
-                // If property is an input, display a regular property field and put a port handle on the left side
+                // 输入端口：普通字段 + 左侧端口手柄
                 if (port.direction == XNode.NodePort.IO.Input) {
-                    // Get data from [Input] attribute
+                    // 从 [Input] 特性取显示设置
                     XNode.Node.ShowBackingValue showBacking = XNode.Node.ShowBackingValue.Unconnected;
                     XNode.Node.InputAttribute inputAttribute;
                     bool dynamicPortList = false;
@@ -172,7 +172,7 @@ namespace XNodeEditor {
                 GUIStyle portStyle = NodeEditorWindow.current.graphEditor.GetPortStyle(port);
                 DrawPortHandle(rect, backgroundColor, col, portStyle.normal.background, portStyle.active.background);
 
-                // Register the handle position
+                // 登记端口手柄位置
                 Vector2 portPos = rect.center;
                 NodeEditor.portPositions[port] = portPos;
             }
@@ -184,30 +184,28 @@ namespace XNodeEditor {
             return fi.FieldType;
         }
 
-        /// <summary> Make a simple port field. </summary>
+        /// <summary> 绘制一个简单的端口字段 </summary>
         public static void PortField(XNode.NodePort port, params GUILayoutOption[] options) {
             PortField(null, port, options);
         }
 
-        /// <summary> Make a simple port field. </summary>
+        /// <summary> 绘制一个带标签的简单端口字段 </summary>
         public static void PortField(GUIContent label, XNode.NodePort port, params GUILayoutOption[] options) {
             if (port == null) return;
             if (options == null) options = new GUILayoutOption[] { GUILayout.MinWidth(30) };
             Vector2 position = Vector3.zero;
             GUIContent content = label != null ? label : new GUIContent(ObjectNames.NicifyVariableName(port.fieldName));
 
-            // If property is an input, display a regular property field and put a port handle on the left side
+            // 输入端口：标签 + 左侧手柄
             if (port.direction == XNode.NodePort.IO.Input) {
-                // Display a label
                 EditorGUILayout.LabelField(content, options);
 
                 Rect rect = GUILayoutUtility.GetLastRect();
                 float paddingLeft = NodeEditorWindow.current.graphEditor.GetPortStyle(port).padding.left;
                 position = rect.position - new Vector2(16 + paddingLeft, 0);
             }
-            // If property is an output, display a text label and put a port handle on the right side
+            // 输出端口：右对齐标签 + 右侧手柄
             else if (port.direction == XNode.NodePort.IO.Output) {
-                // Display a label
                 EditorGUILayout.LabelField(content, NodeEditorResources.OutputPort, options);
 
                 Rect rect = GUILayoutUtility.GetLastRect();
@@ -217,7 +215,7 @@ namespace XNodeEditor {
             PortField(position, port);
         }
 
-        /// <summary> Make a simple port field. </summary>
+        /// <summary> 在指定相对位置绘制一个端口字段 </summary>
         public static void PortField(Vector2 position, XNode.NodePort port) {
             if (port == null) return;
 
@@ -229,17 +227,17 @@ namespace XNodeEditor {
 
             DrawPortHandle(rect, backgroundColor, col, portStyle.normal.background, portStyle.active.background);
 
-            // Register the handle position
+            // 登记端口手柄位置
             Vector2 portPos = rect.center;
             NodeEditor.portPositions[port] = portPos;
         }
 
-        /// <summary> Add a port field to previous layout element. </summary>
+        /// <summary> 把端口手柄添加到上一个布局元素上 </summary>
         public static void AddPortField(XNode.NodePort port) {
             if (port == null) return;
             Rect rect = new Rect();
 
-            // If property is an input, display a regular property field and put a port handle on the left side
+            // 输入端口：手柄放在上一个元素左侧
             if (port.direction == XNode.NodePort.IO.Input) {
                 rect = GUILayoutUtility.GetLastRect();
                 float paddingLeft = NodeEditorWindow.current.graphEditor.GetPortStyle(port).padding.left;
@@ -259,12 +257,12 @@ namespace XNodeEditor {
 
             DrawPortHandle(rect, backgroundColor, col, portStyle.normal.background, portStyle.active.background);
 
-            // Register the handle position
+            // 登记端口手柄位置
             Vector2 portPos = rect.center;
             NodeEditor.portPositions[port] = portPos;
         }
 
-        /// <summary> Draws an input and an output port on the same line </summary>
+        /// <summary> 在同一行绘制一对输入/输出端口 </summary>
         public static void PortPair(XNode.NodePort input, XNode.NodePort output) {
             GUILayout.BeginHorizontal();
             NodeEditorGUILayout.PortField(input, GUILayout.MinWidth(0));
@@ -273,13 +271,13 @@ namespace XNodeEditor {
         }
 
         /// <summary>
-        /// Draw the port
+        /// 绘制端口手柄圆点
         /// </summary>
-        /// <param name="rect">position and size</param>
-        /// <param name="backgroundColor">color for background texture of the port. Normaly used to Border</param>
-        /// <param name="typeColor"></param>
-        /// <param name="border">texture for border of the dot port</param>
-        /// <param name="dot">texture for the dot port</param>
+        /// <param name="rect">位置与尺寸</param>
+        /// <param name="backgroundColor">端口背景纹理颜色，通常用作描边</param>
+        /// <param name="typeColor">端口圆点颜色</param>
+        /// <param name="border">圆点描边纹理</param>
+        /// <param name="dot">圆点主体纹理</param>
         public static void DrawPortHandle(Rect rect, Color backgroundColor, Color typeColor, Texture2D border, Texture2D dot) {
             Color col = GUI.color;
             GUI.color = backgroundColor;
@@ -342,7 +340,7 @@ namespace XNodeEditor {
             if (reorderableListCache.TryGetValue(serializedObject.targetObject, out rlc)) {
                 if (!rlc.TryGetValue(fieldName, out list)) list = null;
             }
-            // If a ReorderableList isn't cached for this array, do so.
+            // 该列表没有缓存时新建
             if (list == null) {
                 SerializedProperty arrayData = serializedObject.FindProperty(fieldName);
                 list = CreateReorderableList(fieldName, dynamicPorts, arrayData, type, serializedObject, io, connectionType, typeConstraint, onCreation);
@@ -364,6 +362,7 @@ namespace XNodeEditor {
                 (Rect rect, int index, bool isActive, bool isFocused) => {
                     XNode.NodePort port = node.GetPort(fieldName + " " + index);
                     if (hasArrayData && arrayData.propertyType != SerializedPropertyType.String) {
+                        // 数组数据越界时提示而非崩溃
                         if (arrayData.arraySize <= index) {
                             EditorGUI.LabelField(rect, "Array[" + index + "] data out of range");
                             return;
@@ -394,49 +393,47 @@ namespace XNodeEditor {
                 };
             list.onReorderCallback =
                 (ReorderableList rl) => {
+                    // 重排序 = 相邻端口逐个交换连接，同时交换锚点缓存避免连线抖动
                     serializedObject.Update();
                     bool hasRect = false;
                     bool hasNewRect = false;
                     Rect rect = Rect.zero;
                     Rect newRect = Rect.zero;
-                    // Move up
+                    // 上移
                     if (rl.index > reorderableListIndex) {
                         for (int i = reorderableListIndex; i < rl.index; ++i) {
                             XNode.NodePort port = node.GetPort(fieldName + " " + i);
                             XNode.NodePort nextPort = node.GetPort(fieldName + " " + (i + 1));
                             port.SwapConnections(nextPort);
 
-                            // Swap cached positions to mitigate twitching
                             hasRect = NodeEditorWindow.current.portConnectionPoints.TryGetValue(port, out rect);
                             hasNewRect = NodeEditorWindow.current.portConnectionPoints.TryGetValue(nextPort, out newRect);
                             NodeEditorWindow.current.portConnectionPoints[port] = hasNewRect ? newRect : rect;
                             NodeEditorWindow.current.portConnectionPoints[nextPort] = hasRect ? rect : newRect;
                         }
                     }
-                    // Move down
+                    // 下移
                     else {
                         for (int i = reorderableListIndex; i > rl.index; --i) {
                             XNode.NodePort port = node.GetPort(fieldName + " " + i);
                             XNode.NodePort nextPort = node.GetPort(fieldName + " " + (i - 1));
                             port.SwapConnections(nextPort);
 
-                            // Swap cached positions to mitigate twitching
                             hasRect = NodeEditorWindow.current.portConnectionPoints.TryGetValue(port, out rect);
                             hasNewRect = NodeEditorWindow.current.portConnectionPoints.TryGetValue(nextPort, out newRect);
                             NodeEditorWindow.current.portConnectionPoints[port] = hasNewRect ? newRect : rect;
                             NodeEditorWindow.current.portConnectionPoints[nextPort] = hasRect ? rect : newRect;
                         }
                     }
-                    // Apply changes
+                    // 应用变更
                     serializedObject.ApplyModifiedProperties();
                     serializedObject.Update();
 
-                    // Move array data if there is any
+                    // 存在数组数据时同步移动数组元素
                     if (hasArrayData) {
                         arrayData.MoveArrayElement(reorderableListIndex, rl.index);
                     }
 
-                    // Apply changes
                     serializedObject.ApplyModifiedProperties();
                     serializedObject.Update();
                     NodeEditorWindow.current.Repaint();
@@ -444,7 +441,7 @@ namespace XNodeEditor {
                 };
             list.onAddCallback =
                 (ReorderableList rl) => {
-                    // Add dynamic port postfixed with an index number
+                    // 按序号后缀命名新增端口
                     string newName = fieldName + " 0";
                     int i = 0;
                     while (node.HasPort(newName)) newName = fieldName + " " + (++i);
@@ -480,8 +477,7 @@ namespace XNodeEditor {
                     } else if (dynamicPorts.Count <= index) {
                         Debug.LogWarning("DynamicPorts[" + index + "] out of range. Length was " + dynamicPorts.Count + " - Skipped");
                     } else {
-
-                        // Clear the removed ports connections
+                        // 清空被移除端口的连接
                         dynamicPorts[index].ClearConnections();
                         // Move following connections one step up to replace the missing connection
                         for (int k = index + 1; k < dynamicPorts.Count(); k++) {
@@ -504,7 +500,7 @@ namespace XNodeEditor {
                             return;
                         }
                         arrayData.DeleteArrayElementAtIndex(index);
-                        // Error handling. If the following happens too often, file a bug report at https://github.com/Siccity/xNode/issues
+                        // 数组元素多于动态端口时删掉多余元素（频繁出现请上报）
                         if (dynamicPorts.Count <= arrayData.arraySize) {
                             while (dynamicPorts.Count <= arrayData.arraySize) {
                                 arrayData.DeleteArrayElementAtIndex(arrayData.arraySize - 1);
@@ -516,10 +512,10 @@ namespace XNodeEditor {
                     }
                 };
 
+            // 数组数据与端口数量不一致时先对齐
             if (hasArrayData) {
                 int dynamicPortCount = dynamicPorts.Count;
                 while (dynamicPortCount < arrayData.arraySize) {
-                    // Add dynamic port postfixed with an index number
                     string newName = arrayData.name + " 0";
                     int i = 0;
                     while (node.HasPort(newName)) newName = arrayData.name + " " + (++i);

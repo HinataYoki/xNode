@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -19,19 +19,20 @@ namespace XNodeEditor {
 
         [NonSerialized] private static Type[] _nodeTypes = null;
 
-        /// <summary> Return a delegate used to determine whether window is docked or not. It is faster to cache this delegate than run the reflection required each time. </summary>
+        /// <summary> 返回判断窗口是否停靠的委托；缓存委托比每次反射调用更快 </summary>
         public static Func<bool> GetIsDockedDelegate(this EditorWindow window) {
             BindingFlags fullBinding = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
             MethodInfo isDockedMethod = typeof(EditorWindow).GetProperty("docked", fullBinding).GetGetMethod(true);
             return (Func<bool>) Delegate.CreateDelegate(typeof(Func<bool>), window, isDockedMethod);
         }
 
+        /// <summary> 反射取全部 Node 派生类型（进程内缓存，右键创建菜单的数据源） </summary>
         public static Type[] GetNodeTypes() {
-            //Get all classes deriving from Node via reflection
+            //反射取全部 Node 派生类型
             return GetDerivedTypes(typeof(XNode.Node));
         }
 
-        /// <summary> Custom node tint colors defined with [NodeColor(r, g, b)] </summary>
+        /// <summary> 取 [NodeTint(r, g, b)] 定义的节点着色 </summary>
         public static bool TryGetAttributeTint(this Type nodeType, out Color tint) {
             if (nodeTint == null) {
                 CacheAttributes<Color, XNode.Node.NodeTintAttribute>(ref nodeTint, x => x.color);
@@ -39,7 +40,7 @@ namespace XNodeEditor {
             return nodeTint.TryGetValue(nodeType, out tint);
         }
 
-        /// <summary> Get custom node widths defined with [NodeWidth(width)] </summary>
+        /// <summary> 取 [NodeWidth(width)] 定义的节点宽度 </summary>
         public static bool TryGetAttributeWidth(this Type nodeType, out int width) {
             if (nodeWidth == null) {
                 CacheAttributes<int, XNode.Node.NodeWidthAttribute>(ref nodeWidth, x => x.width);
@@ -66,7 +67,7 @@ namespace XNodeEditor {
             return field;
         }
 
-        /// <summary> Get all classes deriving from baseType via reflection </summary>
+        /// <summary> 反射取所有继承自基类的类型 </summary>
         public static Type[] GetDerivedTypes(this Type baseType) {
             List<System.Type> types = new List<System.Type>();
             System.Reflection.Assembly[] assemblies = System.AppDomain.CurrentDomain.GetAssemblies();
@@ -100,7 +101,7 @@ namespace XNodeEditor {
             }
         }
 
-        /// <summary> Call OnValidate on target </summary>
+        /// <summary> 对目标调用 OnValidate </summary>
         public static void TriggerOnValidate(this UnityEngine.Object target) {
             System.Reflection.MethodInfo onValidate = null;
             if (target != null) {
@@ -109,6 +110,10 @@ namespace XNodeEditor {
             }
         }
 
+        /// <summary>
+        /// 反射取对象上全部标了 [ContextMenu] 的实例方法；带参数或静态方法会告警并跳过，
+        /// 结果按 ContextMenu.priority 升序排序。
+        /// </summary>
         public static KeyValuePair<ContextMenu, MethodInfo>[] GetContextMenuMethods(object obj) {
             Type type = obj.GetType();
             MethodInfo[] methods = type.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
@@ -136,7 +141,7 @@ namespace XNodeEditor {
             return kvp.ToArray();
         }
 
-        /// <summary> Very crude. Uses a lot of reflection. </summary>
+        /// <summary> 打开 xNode 偏好设置页；内部 API 变动时会失败并提示 </summary>
         public static void OpenPreferences() {
             try {
 #if UNITY_2018_3_OR_NEWER

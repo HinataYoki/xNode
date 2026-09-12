@@ -2,7 +2,7 @@ using UnityEditor;
 using UnityEngine;
 
 namespace XNodeEditor {
-    /// <summary> Utility for renaming assets </summary>
+    /// <summary> 资产重命名弹窗工具 </summary>
     public class RenamePopup : EditorWindow {
         private const string inputControlName = "nameInput";
 
@@ -12,7 +12,7 @@ namespace XNodeEditor {
 
         private bool firstFrame = true;
 
-        /// <summary> Show a rename popup for an asset at mouse position. Will trigger reimport of the asset on apply.
+        /// <summary> 在鼠标位置弹出资产重命名窗口；确认时触发资产重导入。 </summary>
         public static RenamePopup Show(Object target, float width = 200) {
             RenamePopup window = EditorWindow.GetWindow<RenamePopup>(true, "Rename " + target.name, true);
             if (current != null) current.Close();
@@ -25,6 +25,7 @@ namespace XNodeEditor {
             return window;
         }
 
+        /// <summary> 把窗口定位到鼠标下方水平居中；Event.current 为空时跳过 </summary>
         private void UpdatePositionToMouse() {
             if (Event.current == null) return;
             Vector3 mousePoint = GUIUtility.GUIToScreenPoint(Event.current.mousePosition);
@@ -34,11 +35,16 @@ namespace XNodeEditor {
             position = pos;
         }
 
+        /// <summary> 失焦时自动关闭弹窗 </summary>
         private void OnLostFocus() {
-            // Make the popup close on lose focus
+            // 失焦时自动关闭弹窗
             Close();
         }
 
+        /// <summary>
+        /// 绘制重命名输入框：空输入时按钮变为"还原默认名"，回车/Apply 提交；
+        /// 提交后触发 OnRename、重设图为主资产并重导入；Esc 直接关闭。
+        /// </summary>
         private void OnGUI() {
             if (firstFrame) {
                 UpdatePositionToMouse();
@@ -48,7 +54,7 @@ namespace XNodeEditor {
             input = EditorGUILayout.TextField(input);
             EditorGUI.FocusTextInControl(inputControlName);
             Event e = Event.current;
-            // If input is empty, revert name to default instead
+            // 输入为空时改为还原默认名
             if (input == null || input.Trim() == "") {
                 if (GUILayout.Button("Revert to default") || (e.isKey && e.keyCode == KeyCode.Return)) {
                     target.name = NodeEditorUtilities.NodeDefaultName(target.GetType());
@@ -61,7 +67,7 @@ namespace XNodeEditor {
                     target.TriggerOnValidate();
                 }
             }
-            // Rename asset to input text
+            // 按输入文本重命名资产
             else {
                 if (GUILayout.Button("Apply") || (e.isKey && e.keyCode == KeyCode.Return)) {
                     target.name = input;
@@ -80,6 +86,7 @@ namespace XNodeEditor {
             }
         }
 
+        /// <summary> 关闭弹窗时退出 IMGUI 文本编辑态，避免编辑框焦点残留 </summary>
         private void OnDestroy() {
             EditorGUIUtility.editingTextField = false;
         }

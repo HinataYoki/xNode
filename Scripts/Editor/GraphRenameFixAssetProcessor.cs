@@ -3,14 +3,13 @@ using XNode;
 
 namespace XNodeEditor {
     /// <summary>
-    /// This asset processor resolves an issue with the new v2 AssetDatabase system present on 2019.3 and later. When
-    /// renaming a <see cref="XNode.NodeGraph"/> asset, it appears that sometimes the v2 AssetDatabase will swap which asset
-    /// is the main asset (present at top level) between the <see cref="XNode.NodeGraph"/> and one of its <see cref="XNode.Node"/>
-    /// sub-assets. As a workaround until Unity fixes this, this asset processor checks all renamed assets and if it
-    /// finds a case where a <see cref="XNode.Node"/> has been made the main asset it will swap it back to being a sub-asset
-    /// and rename the node to the default name for that node type.
+    /// 修复 2019.3+ 的 v2 AssetDatabase 问题：重命名 <see cref="XNode.NodeGraph"/> 资产时，
+    /// v2 AssetDatabase 偶尔会把 <see cref="XNode.NodeGraph"/> 与其某个 <see cref="XNode.Node"/>
+    /// 子资产的主资产身份互换。在 Unity 修复前，本处理器检查所有被重命名的资产，
+    /// 发现节点被设为主资产时把图换回主资产，并把节点名重置为该类型的默认名。
     /// </summary>
     internal sealed class GraphRenameFixAssetProcessor : AssetPostprocessor {
+        /// <summary> 资产移动/重命名后处理：发现主资产身份被子资产节点抢占时，把图换回主资产并重置节点名 </summary>
         private static void OnPostprocessAllAssets(
             string[] importedAssets,
             string[] deletedAssets,
@@ -19,9 +18,7 @@ namespace XNodeEditor {
             for (int i = 0; i < movedAssets.Length; i++) {
                 Node nodeAsset = AssetDatabase.LoadMainAssetAtPath(movedAssets[i]) as Node;
 
-                // If the renamed asset is a node graph, but the v2 AssetDatabase has swapped a sub-asset node to be its
-                // main asset, reset the node graph to be the main asset and rename the node asset back to its default
-                // name.
+                // 图资产的主资产身份被子资产节点抢占时，把图换回主资产并重置节点名
                 if (nodeAsset != null && AssetDatabase.IsMainAsset(nodeAsset)) {
                     AssetDatabase.SetMainObject(nodeAsset.graph, movedAssets[i]);
                     AssetDatabase.ImportAsset(movedAssets[i]);

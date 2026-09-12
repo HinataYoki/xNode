@@ -9,17 +9,22 @@ using GenericMenu = XNodeEditor.AdvancedGenericMenu;
 #endif
 
 namespace XNodeEditor {
-    /// <summary> Contains GUI methods </summary>
+    /// <summary> 窗口 GUI 绘制 </summary>
     public partial class NodeEditorWindow {
         public NodeGraphEditor graphEditor;
         private readonly HashSet<UnityEngine.Object> selectionCache = new();
+        /// <summary> 视口外且未选中的节点集合，Layout 帧重建、重绘帧查询 </summary>
         private readonly HashSet<XNode.Node> culledNodes = new();
         /// <summary> 19 if docked, 22 if not </summary>
         private int topPadding { get { return isDocked() ? 19 : 22; } }
-        /// <summary> Executed after all other window GUI. Useful if Zoom is ruining your day. Automatically resets after being run.</summary>
+        /// <summary> 在窗口其余 GUI 之后执行的事件；常用于规避 Zoom 的绘制问题，执行后自动清空 </summary>
         public event Action onLateGUI;
         private static readonly Vector3[] polyLineTempArray = new Vector3[2];
 
+        /// <summary>
+        /// 窗口主绘制：处理交互事件，依次画网格、连接线、拖拽中的连线、节点、框选框、
+        /// 悬停提示，再交给 graphEditor.OnGUI 与 onLateGUI；退出前还原 GUI 矩阵。
+        /// </summary>
         protected virtual void OnGUI() {
             Event e = Event.current;
             Matrix4x4 m = GUI.matrix;
@@ -35,7 +40,7 @@ namespace XNodeEditor {
             DrawTooltip();
             graphEditor.OnGUI();
 
-            // Run and reset onLateGUI
+            // 执行并清空 onLateGUI
             if (onLateGUI != null) {
                 onLateGUI();
                 onLateGUI = null;
@@ -44,6 +49,10 @@ namespace XNodeEditor {
             GUI.matrix = m;
         }
 
+        /// <summary>
+        /// 进入缩放坐标系：先结束默认裁剪，再以 rect 中心为锚点做 1/zoom 缩放并按 topPadding 补偿偏移。
+        /// 必须与 <see cref="EndZoomed"/> 配对，节点/连线都在这一坐标系内绘制。
+        /// </summary>
         public static void BeginZoomed(Rect rect, float zoom, float topPadding) {
             GUI.EndClip();
 
@@ -55,6 +64,7 @@ namespace XNodeEditor {
                 rect.height * zoom));
         }
 
+        /// <summary> 退出缩放坐标系：恢复 GUI 矩阵与缩放，抵消 topPadding 造成的偏移 </summary>
         public static void EndZoomed(Rect rect, float zoom, float topPadding) {
             GUIUtility.ScaleAroundPivot(Vector2.one * zoom, rect.size * 0.5f);
             Vector3 offset = new Vector3(
@@ -64,6 +74,7 @@ namespace XNodeEditor {
             GUI.matrix = Matrix4x4.TRS(offset, Quaternion.identity, Vector3.one);
         }
 
+        /// <summary> 绘制平铺网格背景（主纹理 + 交叉点纹理） </summary>
         public void DrawGrid(Rect rect, float zoom, Vector2 panOffset) {
 
             rect.position = Vector2.zero;
@@ -72,23 +83,24 @@ namespace XNodeEditor {
             Texture2D gridTex = graphEditor.GetGridTexture();
             Texture2D crossTex = graphEditor.GetSecondaryGridTexture();
 
-            // Offset from origin in tile units
+            // 以纹理瓦片为单位的偏移
             float xOffset = -(center.x * zoom + panOffset.x) / gridTex.width;
             float yOffset = ((center.y - rect.size.y) * zoom + panOffset.y) / gridTex.height;
 
             Vector2 tileOffset = new Vector2(xOffset, yOffset);
 
-            // Amount of tiles
+            // 瓦片数量
             float tileAmountX = Mathf.Round(rect.size.x * zoom) / gridTex.width;
             float tileAmountY = Mathf.Round(rect.size.y * zoom) / gridTex.height;
 
             Vector2 tileAmount = new Vector2(tileAmountX, tileAmountY);
 
-            // Draw tiled background
+            // 平铺绘制背景
             GUI.DrawTextureWithTexCoords(rect, gridTex, new Rect(tileOffset, tileAmount));
             GUI.DrawTextureWithTexCoords(rect, crossTex, new Rect(tileOffset + new Vector2(0.5f, 0.5f), tileAmount));
         }
 
+        /// <summary> 绘制框选矩形 </summary>
         public void DrawSelectionBox() {
             if (currentActivity == NodeActivity.DragGrid) {
                 Vector2 curPos = WindowToGridPosition(Event.current.mousePosition);
@@ -100,11 +112,12 @@ namespace XNodeEditor {
             }
         }
 
+        /// <summary> 画一个固定宽度的工具栏下拉按钮，按下返回 true </summary>
         public static bool DropdownButton(string name, float width) {
             return GUILayout.Button(name, EditorStyles.toolbarDropDown, GUILayout.Width(width));
         }
 
-        /// <summary> Show right-click context menu for hovered reroute </summary>
+        /// <summary> 弹出悬停重路由点的右键菜单 </summary>
         void ShowRerouteContextMenu(RerouteReference reroute) {
             GenericMenu contextMenu = new GenericMenu();
             contextMenu.AddItem(new GUIContent("Remove"), false, () => reroute.RemovePoint());
@@ -112,7 +125,7 @@ namespace XNodeEditor {
             if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
         }
 
-        /// <summary> Show right-click context menu for hovered port </summary>
+        /// <summary> 弹出悬停端口的右键菜单：断开各连接/清空连接/创建兼容节点 </summary>
         void ShowPortContextMenu(XNode.NodePort hoveredPort) {
             GenericMenu contextMenu = new GenericMenu();
             foreach (var port in hoveredPort.GetConnections()) {
@@ -121,7 +134,7 @@ namespace XNodeEditor {
                 contextMenu.AddItem(new GUIContent(string.Format("Disconnect({0})", name)), false, () => hoveredPort.Disconnect(index));
             }
             contextMenu.AddItem(new GUIContent("Clear Connections"), false, () => hoveredPort.ClearConnections());
-            //Get compatible nodes with this port
+            // 列出与该端口兼容的节点创建项
             if (NodeEditorPreferences.GetSettings().createFilter) {
                 contextMenu.AddSeparator("");
 
@@ -134,6 +147,7 @@ namespace XNodeEditor {
             if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
         }
 
+        /// <summary> 计算三次贝塞尔曲线上 t 处的点 </summary>
         static Vector2 CalculateBezierPoint(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t) {
             float u = 1 - t;
             float tt = t * t, uu = u * u;
@@ -144,7 +158,7 @@ namespace XNodeEditor {
             );
         }
 
-        /// <summary> Draws a line segment without allocating temporary arrays </summary>
+        /// <summary> 绘制线段，零临时数组分配 </summary>
         static void DrawAAPolyLineNonAlloc(float thickness, Vector2 p0, Vector2 p1) {
             polyLineTempArray[0].x = p0.x;
             polyLineTempArray[0].y = p0.y;
@@ -153,9 +167,9 @@ namespace XNodeEditor {
             Handles.DrawAAPolyLine(thickness, polyLineTempArray);
         }
 
-        /// <summary> Draw a bezier from output to input in grid coordinates </summary>
+        /// <summary> 在网格坐标系下从输出向输入绘制一条连线；支持 Curvy/Straight/Angled/ShaderLab 四种路径与实线/虚线描边 </summary>
         public void DrawNoodle(Gradient gradient, NoodlePath path, NoodleStroke stroke, float thickness, List<Vector2> gridPoints) {
-            // convert grid points to window points
+            // 网格坐标转窗口坐标
             for (int i = 0; i < gridPoints.Count; ++i)
                 gridPoints[i] = GridToWindowPosition(gridPoints[i]);
 
@@ -167,12 +181,13 @@ namespace XNodeEditor {
                     Vector2 outputTangent = Vector2.right;
                     for (int i = 0; i < length - 1; i++) {
                         Vector2 inputTangent;
-                        // Cached most variables that repeat themselves here to avoid so many indexer calls :p
+                        // 缓存重复使用的中间量，减少索引器调用
                         Vector2 point_a = gridPoints[i];
                         Vector2 point_b = gridPoints[i + 1];
                         float dist_ab = Vector2.Distance(point_a, point_b);
                         if (i == 0) outputTangent = zoom * dist_ab * 0.01f * Vector2.right;
                         if (i < length - 2) {
+                            // 中间段：按前后三点求平滑切线
                             Vector2 point_c = gridPoints[i + 2];
                             Vector2 ab = (point_b - point_a).normalized;
                             Vector2 cb = (point_b - point_c).normalized;
@@ -187,16 +202,17 @@ namespace XNodeEditor {
                             inputTangent = zoom * dist_ab * 0.01f * Vector2.left;
                         }
 
-                        // Calculates the tangents for the bezier's curves.
+                        // 计算贝塞尔曲线切线
                         float zoomCoef = 50 / zoom;
                         Vector2 tangent_a = point_a + outputTangent * zoomCoef;
                         Vector2 tangent_b = point_b + inputTangent * zoomCoef;
-                        // Hover effect.
+                        // 分段数随距离缩放
                         int division = Mathf.RoundToInt(.2f * dist_ab) + 3;
-                        // Coloring and bezier drawing.
+                        // 上色与绘制
                         int draw = 0;
                         Vector2 bezierPrevious = point_a;
                         for (int j = 1; j <= division; ++j) {
+                            // 虚线：按 2 正 2 负的节奏跳过绘制段
                             if (stroke == NoodleStroke.Dashed) {
                                 draw++;
                                 if (draw >= 2) draw = -2;
@@ -216,9 +232,8 @@ namespace XNodeEditor {
                     for (int i = 0; i < length - 1; i++) {
                         Vector2 point_a = gridPoints[i];
                         Vector2 point_b = gridPoints[i + 1];
-                        // Draws the line with the coloring.
                         Vector2 prev_point = point_a;
-                        // Approximately one segment per 5 pixels
+                        // 约每 5 像素一段
                         int segments = (int) Vector2.Distance(point_a, point_b) / 5;
                         segments = Math.Max(segments, 1);
 
@@ -289,10 +304,10 @@ namespace XNodeEditor {
                 case NoodlePath.ShaderLab:
                     Vector2 start = gridPoints[0];
                     Vector2 end = gridPoints[length - 1];
-                    //Modify first and last point in array so we can loop trough them nicely.
+                    // 首尾点外移一段，让两端从端口处先走一小段竖直方向的直线
                     gridPoints[0] = gridPoints[0] + Vector2.right * (20 / zoom);
                     gridPoints[length - 1] = gridPoints[length - 1] + Vector2.left * (20 / zoom);
-                    //Draw first vertical lines going out from nodes
+                    // 绘制从节点引出的首尾两段
                     Handles.color = gradient.Evaluate(0f);
                     DrawAAPolyLineNonAlloc(thickness, start, gridPoints[0]);
                     Handles.color = gradient.Evaluate(1f);
@@ -300,9 +315,8 @@ namespace XNodeEditor {
                     for (int i = 0; i < length - 1; i++) {
                         Vector2 point_a = gridPoints[i];
                         Vector2 point_b = gridPoints[i + 1];
-                        // Draws the line with the coloring.
                         Vector2 prev_point = point_a;
-                        // Approximately one segment per 5 pixels
+                        // 约每 5 像素一段
                         int segments = (int) Vector2.Distance(point_a, point_b) / 5;
                         segments = Math.Max(segments, 1);
 
@@ -326,7 +340,7 @@ namespace XNodeEditor {
             Handles.color = originalHandlesColor;
         }
 
-        /// <summary> Draws all connections </summary>
+        /// <summary> 绘制全部连接线与重路由点，并顺带收集悬停/框选命中的重路由点 </summary>
         public void DrawConnections() {
             Vector2 mousePos = Event.current.mousePosition;
             List<RerouteReference> selection = preBoxSelectionReroute != null ? new List<RerouteReference>(preBoxSelectionReroute) : new List<RerouteReference>();
@@ -336,7 +350,7 @@ namespace XNodeEditor {
 
             Color col = GUI.color;
             foreach (XNode.Node node in graph.nodes) {
-                //If a null node is found, return. This can happen if the nodes associated script is deleted. It is currently not possible in Unity to delete a null asset.
+                // 脚本被删等情况下节点会为 null，跳过（Unity 不允许删除 null 资产，这里只跳过不清理）
                 if (node == null) continue;
 
                 // Draw full connections and output > reroute
@@ -370,15 +384,14 @@ namespace XNodeEditor {
                         gridPoints.Add(toRect.center);
                         DrawNoodle(noodleGradient, noodlePath, noodleStroke, noodleThickness, gridPoints);
 
-                        // Loop through reroute points again and draw the points
+                        // 绘制该连线上的重路由点
                         for (int i = 0; i < reroutePoints.Count; i++) {
                             RerouteReference rerouteRef = new RerouteReference(output, k, i);
-                            // Draw reroute point at position
                             Rect rect = new Rect(reroutePoints[i], new Vector2(12, 12));
                             rect.position = new Vector2(rect.position.x - 6, rect.position.y - 6);
                             rect = GridToWindowRect(rect);
 
-                            // Draw selected reroute points with an outline
+                            // 选中态的重路由点带高亮描边
                             if (selectedReroutes.Contains(rerouteRef)) {
                                 GUI.color = NodeEditorPreferences.GetSettings().highlightColor;
                                 GUI.DrawTexture(rect, portStyle.normal.background);
@@ -397,9 +410,11 @@ namespace XNodeEditor {
             if (Event.current.type != EventType.Layout && currentActivity == NodeActivity.DragGrid) selectedReroutes = selection;
         }
 
+        /// <summary> 绘制全部节点（含剔除、选中高亮、端口锚点缓存、悬停与框选检测） </summary>
         private void DrawNodes() {
             Event e = Event.current;
 
+            // Layout 帧刷新选中集合快照，其余帧只读
             if (e.type == EventType.Layout) {
                 selectionCache.Clear();
                 var objs = Selection.objects;
@@ -408,6 +423,8 @@ namespace XNodeEditor {
                     selectionCache.Add(obj);
             }
 
+            // 选中节点带 OnValidate 时做变更检测（OnValidate 仅编辑器相关，反射调用避免进构建）；
+            // MethodInfo 按类型缓存，选中节点时不再每帧反射查找
             System.Reflection.MethodInfo onValidate = null;
             if (Selection.activeObject != null && Selection.activeObject is XNode.Node) {
                 onValidate = Selection.activeObject.GetType().GetMethod("OnValidate");
@@ -425,28 +442,28 @@ namespace XNodeEditor {
 
             List<UnityEngine.Object> preSelection = preBoxSelection != null ? new List<UnityEngine.Object>(preBoxSelection) : new List<UnityEngine.Object>();
 
-            // Selection box stuff
+            // 框选矩形
             Vector2 boxStartPos = GridToWindowPositionNoClipped(dragBoxStart);
             Vector2 boxSize = mousePos - boxStartPos;
             if (boxSize.x < 0) { boxStartPos.x += boxSize.x; boxSize.x = Mathf.Abs(boxSize.x); }
             if (boxSize.y < 0) { boxStartPos.y += boxSize.y; boxSize.y = Mathf.Abs(boxSize.y); }
             Rect selectionBox = new Rect(boxStartPos, boxSize);
 
-            //Save guiColor so we can revert it
+            // 保存 GUI 颜色以便还原
             Color guiColor = GUI.color;
 
             List<XNode.NodePort> removeEntries = new List<XNode.NodePort>();
 
             if (e.type == EventType.Layout) culledNodes.Clear();
             for (int n = 0; n < graph.nodes.Count; n++) {
-                // Skip null nodes. The user could be in the process of renaming scripts, so removing them at this point is not advisable.
+                // 重命名脚本等操作中节点可能为 null，此时跳过而不是移除
                 if (graph.nodes[n] == null) continue;
                 if (n >= graph.nodes.Count) return;
                 XNode.Node node = graph.nodes[n];
 
-                // Culling
+                // 视口剔除
                 if (e.type == EventType.Layout) {
-                    // Cull unselected nodes outside view
+                    // 未选中且在视口外的节点加入剔除集合
                     if (!Selection.Contains(node) && ShouldBeCulled(node)) {
                         culledNodes.Add(node);
                         continue;
@@ -464,16 +481,17 @@ namespace XNodeEditor {
 
                 NodeEditor.portPositions.Clear();
 
-                // Set default label width. This is potentially overridden in OnBodyGUI
+                // 默认标签宽度，OnBodyGUI 内可覆写
                 EditorGUIUtility.labelWidth = 84;
 
-                //Get node position
+                // 节点窗口位置
                 Vector2 nodePos = GridToWindowPositionNoClipped(node.position);
 
                 GUILayout.BeginArea(new Rect(nodePos, new Vector2(nodeEditor.GetWidth(), 4000)));
 
                 bool selected = selectionCache.Contains(graph.nodes[n]);
 
+                // 选中节点包一层高亮描边样式（样式对在 NodeEditor 内缓存，避免每帧拷贝 GUIStyle）
                 if (selected) {
                     GUIStyle style = new GUIStyle(nodeEditor.GetBodyStyle());
                     GUIStyle highlightStyle = new GUIStyle(nodeEditor.GetBodyHighlightStyle());
@@ -492,11 +510,11 @@ namespace XNodeEditor {
                 GUI.color = guiColor;
                 EditorGUI.BeginChangeCheck();
 
-                //Draw node contents
+                // 绘制节点内容
                 nodeEditor.OnHeaderGUI();
                 nodeEditor.OnBodyGUI();
 
-                //If user changed a value, notify other scripts through onUpdateNode
+                // 值变更时通过 onUpdateNode 通知其它脚本
                 if (EditorGUI.EndChangeCheck()) {
                     if (NodeEditor.onUpdateNode != null) NodeEditor.onUpdateNode(node);
                     EditorUtility.SetDirty(node);
@@ -505,7 +523,7 @@ namespace XNodeEditor {
 
                 GUILayout.EndVertical();
 
-                //Cache data about the node for next frame
+                // 缓存节点尺寸与端口锚点供下一帧使用
                 if (e.type == EventType.Repaint) {
                     Vector2 size = GUILayoutUtility.GetLastRect().size;
                     if (nodeSizes.ContainsKey(node)) nodeSizes[node] = size;
@@ -522,7 +540,7 @@ namespace XNodeEditor {
                 if (selected) GUILayout.EndVertical();
 
                 if (e.type != EventType.Layout) {
-                    //Check if we are hovering this node
+                    // 检测鼠标是否悬停在本节点上
                     Vector2 nodeSize = GUILayoutUtility.GetLastRect().size;
                     Rect windowRect = new Rect(nodePos, nodeSize);
                     if (windowRect.Contains(mousePos)) hoveredNode = node;
@@ -555,9 +573,7 @@ namespace XNodeEditor {
             if (e.type != EventType.Layout && currentActivity == NodeActivity.DragGrid) Selection.objects = preSelection.ToArray();
             EndZoomed(position, zoom, topPadding);
 
-            //If a change in is detected in the selected node, call OnValidate method.
-            //This is done through reflection because OnValidate is only relevant in editor,
-            //and thus, the code should not be included in build.
+            // 选中节点的值变更时调用其 OnValidate
             if (onValidate != null && EditorGUI.EndChangeCheck()) onValidate.Invoke(Selection.activeObject, null);
         }
 
@@ -574,6 +590,7 @@ namespace XNodeEditor {
             return false;
         }
 
+        /// <summary> 绘制端口/节点标题的悬停提示框 </summary>
         private void DrawTooltip() {
             if (!NodeEditorPreferences.GetSettings().portTooltips || graphEditor == null)
                 return;

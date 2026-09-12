@@ -1,9 +1,10 @@
-﻿using UnityEditor;
+using UnityEditor;
 using UnityEngine;
 
 namespace XNodeEditor {
+    /// <summary> 编辑器内置纹理与样式资源，全部惰性加载/生成 </summary>
     public static class NodeEditorResources {
-        // Textures
+        // 纹理
         public static Texture2D dot { get { return _dot != null ? _dot : _dot = Resources.Load<Texture2D>("xnode_dot"); } }
         private static Texture2D _dot;
         public static Texture2D dotOuter { get { return _dotOuter != null ? _dotOuter : _dotOuter = Resources.Load<Texture2D>("xnode_dot_outer"); } }
@@ -13,7 +14,8 @@ namespace XNodeEditor {
         public static Texture2D nodeHighlight { get { return _nodeHighlight != null ? _nodeHighlight : _nodeHighlight = Resources.Load<Texture2D>("xnode_node_highlight"); } }
         private static Texture2D _nodeHighlight;
 
-        // Styles
+        // 样式
+        /// <summary> 全部内置样式的惰性单例入口 </summary>
         public static Styles styles { get { return _styles != null ? _styles : _styles = new Styles(); } }
         public static Styles _styles = null;
         public static GUIStyle OutputPort { get { return new GUIStyle(EditorStyles.label) { alignment = TextAnchor.UpperRight }; } }
@@ -55,6 +57,7 @@ namespace XNodeEditor {
             }
         }
 
+        /// <summary> 生成 64x64 平铺网格纹理，含每 16 像素一条的细线与边缘粗线 </summary>
         public static Texture2D GenerateGridTexture(Color line, Color bg) {
             Texture2D tex = new Texture2D(64, 64);
             Color[] cols = new Color[64 * 64];
@@ -74,6 +77,7 @@ namespace XNodeEditor {
             return tex;
         }
 
+        /// <summary> 生成 64x64 中心十字纹理，用于网格交叉点 </summary>
         public static Texture2D GenerateCrossTexture(Color line) {
             Texture2D tex = new Texture2D(64, 64);
             Color[] cols = new Color[64 * 64];
