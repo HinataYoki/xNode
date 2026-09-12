@@ -98,7 +98,9 @@ namespace XNodeEditor {
                     lastKey = attrib.editorPrefsKey;
                 } else return null;
             }
-            if (!settings.ContainsKey(lastKey)) VerifyLoaded();
+            Settings cached;
+            if (settings.TryGetValue(lastKey, out cached)) return cached;
+            VerifyLoaded();
             return settings[lastKey];
         }
 

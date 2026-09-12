@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -116,10 +117,32 @@ namespace XNodeEditor {
             menu.AddCustomContextMenuItems(target);
         }
 
-        /// <summary> Returned gradient is used to color noodles </summary>
-        /// <param name="output"> The output this noodle comes from. Never null. </param>
-        /// <param name="input"> The output this noodle comes from. Can be null if we are dragging the noodle. </param>
+        /// <summary> 连线渐变缓存，键为 (输出端口, 输入端口) 引用对；拖线与悬停命中的连线绕过缓存 </summary>
+        private readonly Dictionary<(XNode.NodePort, XNode.NodePort), Gradient> noodleGradientCache = new Dictionary<(XNode.NodePort, XNode.NodePort), Gradient>();
+
+        /// <summary> 返回的渐变用于给连线上色 </summary>
+        /// <param name="output"> 连线的来源输出端口，永不为 null。 </param>
+        /// <param name="input"> 连线的目标输入端口，拖拽连线时可为 null。 </param>
         public virtual Gradient GetNoodleGradient(XNode.NodePort output, XNode.NodePort input) {
+            // 拖线中的连线每帧变（终点随鼠标）、被悬停的连线有向白过渡，两者现算；其余按端口对缓存
+            if (input == null || window.hoveredPort == output || window.hoveredPort == input) return BuildNoodleGradient(output, input);
+
+            Gradient grad;
+            var key = (output, input);
+            if (!noodleGradientCache.TryGetValue(key, out grad)) {
+                grad = BuildNoodleGradient(output, input);
+                // UpdatePorts 替换端口后旧键会残留，超阈值整体重建，防长会话累积
+                if (noodleGradientCache.Count > 1024) noodleGradientCache.Clear();
+                noodleGradientCache.Add(key, grad);
+            }
+            return grad;
+        }
+
+        /// <summary>
+        /// 构建一条连线的渐变：起点为输出类型色、终点为输入类型色；
+        /// 拖线中呈半透明纯色，任一端被悬停时向白色过渡。
+        /// </summary>
+        private Gradient BuildNoodleGradient(XNode.NodePort output, XNode.NodePort input) {
             Gradient grad = new Gradient();
 
             //拖拽连线时绘制纯色并略微透明

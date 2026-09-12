@@ -58,12 +58,23 @@ namespace XNodeEditor {
             }
         }
 
-        /// <summary> Get FieldInfo of a field, including those that are private and/or inherited </summary>
+        /// <summary> 取字段信息，含私有字段与继承自基类的私有字段 </summary>
+        // (类型, 字段名) -> FieldInfo 缓存；PropertyField/DynamicPortList 每帧按名取字段，
+        // 未命中也缓存（值为 null），避免每次重复基类遍历反射
+        private static readonly Dictionary<(Type, string), FieldInfo> fieldInfoCache = new Dictionary<(Type, string), FieldInfo>();
+
+        /// <summary> 取字段信息，含私有字段与继承自基类的私有字段；结果（含未找到）静态缓存 </summary>
         public static FieldInfo GetFieldInfo(this Type type, string fieldName) {
-            // If we can't find field in the first run, it's probably a private field in a base class.
-            FieldInfo field = type.GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            var key = (type, fieldName);
+            FieldInfo field;
+            if (fieldInfoCache.TryGetValue(key, out field)) return field;
+
+            // 第一轮没找到时，多半是基类中的私有字段
+            field = type.GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             // Search base classes for private fields only. Public fields are found above
-            while (field == null && (type = type.BaseType) != typeof(XNode.Node)) field = type.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance);
+            Type baseType = type;
+            while (field == null && (baseType = baseType.BaseType) != typeof(XNode.Node)) field = baseType.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance);
+            fieldInfoCache.Add(key, field);
             return field;
         }
 

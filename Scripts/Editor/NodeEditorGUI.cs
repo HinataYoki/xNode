@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using XNodeEditor.Internal;
@@ -11,11 +10,20 @@ using GenericMenu = XNodeEditor.AdvancedGenericMenu;
 namespace XNodeEditor {
     /// <summary> 窗口 GUI 绘制 </summary>
     public partial class NodeEditorWindow {
-        public NodeGraphEditor graphEditor;
+        [NonSerialized] public NodeGraphEditor graphEditor;
+        /// <summary> 端口枚举复用缓冲：DrawConnections/DrawNodes 每帧枚举节点端口用，替代 yield 迭代器 </summary>
+        private readonly List<XNode.NodePort> portBuffer = new List<XNode.NodePort>(16);
+        private readonly List<XNode.NodePort> portBuffer2 = new List<XNode.NodePort>(16);
+        /// <summary> Layout 帧建立的选中集合快照；重绘帧只查它，避免遍历 Selection.objects </summary>
         private readonly HashSet<UnityEngine.Object> selectionCache = new();
         /// <summary> 视口外且未选中的节点集合，Layout 帧重建、重绘帧查询 </summary>
         private readonly HashSet<XNode.Node> culledNodes = new();
-        /// <summary> 19 if docked, 22 if not </summary>
+        private readonly List<XNode.NodePort> portEntriesToRemove = new List<XNode.NodePort>();
+        private readonly List<RerouteReference> boxSelectionReroutes = new List<RerouteReference>();
+        private readonly List<UnityEngine.Object> boxSelectionNodes = new List<UnityEngine.Object>();
+        private readonly List<Vector2> connectionGridPoints = new List<Vector2>(8);
+        private readonly List<Vector2> draggedConnectionGridPoints = new List<Vector2>(8);
+        /// <summary> 停靠时 19，非停靠时 22 </summary>
         private int topPadding { get { return isDocked() ? 19 : 22; } }
         /// <summary> 在窗口其余 GUI 之后执行的事件；常用于规避 Zoom 的绘制问题，执行后自动清空 </summary>
         public event Action onLateGUI;
@@ -102,7 +110,7 @@ namespace XNodeEditor {
 
         /// <summary> 绘制框选矩形 </summary>
         public void DrawSelectionBox() {
-            if (currentActivity == NodeActivity.DragGrid) {
+            if (_activity == NodeActivity.DragGrid) {
                 Vector2 curPos = WindowToGridPosition(Event.current.mousePosition);
                 Vector2 size = curPos - dragBoxStart;
                 Rect r = new Rect(dragBoxStart, size);
@@ -139,9 +147,9 @@ namespace XNodeEditor {
                 contextMenu.AddSeparator("");
 
                 if (hoveredPort.direction == XNode.NodePort.IO.Input)
-                    graphEditor.AddContextMenuItems(contextMenu, hoveredPort.ValueType, XNode.NodePort.IO.Output);
+                    graphEditor.AddContextMenuItems(contextMenu, hoveredPort, XNode.NodePort.IO.Output);
                 else
-                    graphEditor.AddContextMenuItems(contextMenu, hoveredPort.ValueType, XNode.NodePort.IO.Input);
+                    graphEditor.AddContextMenuItems(contextMenu, hoveredPort, XNode.NodePort.IO.Input);
             }
             contextMenu.DropDown(new Rect(Event.current.mousePosition, Vector2.zero));
             if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
@@ -253,7 +261,7 @@ namespace XNodeEditor {
                     break;
                 case NoodlePath.Angled:
                     for (int i = 0; i < length - 1; i++) {
-                        if (i == length - 1) continue; // Skip last index
+                        // 横向距离足够时走"中点折线"，否则走"先横再折"的五段式
                         if (gridPoints[i].x <= gridPoints[i + 1].x - (50 / zoom)) {
                             float midpoint = (gridPoints[i].x + gridPoints[i + 1].x) * 0.5f;
                             Vector2 start_1 = gridPoints[i];
@@ -343,19 +351,20 @@ namespace XNodeEditor {
         /// <summary> 绘制全部连接线与重路由点，并顺带收集悬停/框选命中的重路由点 </summary>
         public void DrawConnections() {
             Vector2 mousePos = Event.current.mousePosition;
-            List<RerouteReference> selection = preBoxSelectionReroute != null ? new List<RerouteReference>(preBoxSelectionReroute) : new List<RerouteReference>();
+            bool isBoxSelecting = Event.current.type != EventType.Layout && _activity == NodeActivity.DragGrid;
+            boxSelectionReroutes.Clear();
+            if (isBoxSelecting && preBoxSelectionReroute != null) boxSelectionReroutes.AddRange(preBoxSelectionReroute);
             hoveredReroute = new RerouteReference();
-
-            List<Vector2> gridPoints = new List<Vector2>(2);
 
             Color col = GUI.color;
             foreach (XNode.Node node in graph.nodes) {
                 // 脚本被删等情况下节点会为 null，跳过（Unity 不允许删除 null 资产，这里只跳过不清理）
                 if (node == null) continue;
 
-                // Draw full connections and output > reroute
-                foreach (XNode.NodePort output in node.Outputs) {
-                    //Needs cleanup. Null checks are ugly
+                // 绘制完整连接与 输出->重路由 段
+                node.GetOutputs(portBuffer);
+                for (int p = 0; p < portBuffer.Count; p++) {
+                    XNode.NodePort output = portBuffer[p];
                     Rect fromRect;
                     if (!_portConnectionPoints.TryGetValue(output, out fromRect)) continue;
 
@@ -378,11 +387,11 @@ namespace XNodeEditor {
 
                         List<Vector2> reroutePoints = output.GetReroutePoints(k);
 
-                        gridPoints.Clear();
-                        gridPoints.Add(fromRect.center);
-                        gridPoints.AddRange(reroutePoints);
-                        gridPoints.Add(toRect.center);
-                        DrawNoodle(noodleGradient, noodlePath, noodleStroke, noodleThickness, gridPoints);
+                        connectionGridPoints.Clear();
+                        connectionGridPoints.Add(fromRect.center);
+                        connectionGridPoints.AddRange(reroutePoints);
+                        connectionGridPoints.Add(toRect.center);
+                        DrawNoodle(noodleGradient, noodlePath, noodleStroke, noodleThickness, connectionGridPoints);
 
                         // 绘制该连线上的重路由点
                         for (int i = 0; i < reroutePoints.Count; i++) {
@@ -399,7 +408,7 @@ namespace XNodeEditor {
 
                             GUI.color = portColor;
                             GUI.DrawTexture(rect, portStyle.active.background);
-                            if (rect.Overlaps(selectionBox)) selection.Add(rerouteRef);
+                            if (isBoxSelecting && rect.Overlaps(selectionBox)) boxSelectionReroutes.Add(rerouteRef);
                             if (rect.Contains(mousePos)) hoveredReroute = rerouteRef;
 
                         }
@@ -407,7 +416,10 @@ namespace XNodeEditor {
                 }
             }
             GUI.color = col;
-            if (Event.current.type != EventType.Layout && currentActivity == NodeActivity.DragGrid) selectedReroutes = selection;
+            if (isBoxSelecting) {
+                selectedReroutes.Clear();
+                selectedReroutes.AddRange(boxSelectionReroutes);
+            }
         }
 
         /// <summary> 绘制全部节点（含剔除、选中高亮、端口锚点缓存、悬停与框选检测） </summary>
@@ -427,7 +439,7 @@ namespace XNodeEditor {
             // MethodInfo 按类型缓存，选中节点时不再每帧反射查找
             System.Reflection.MethodInfo onValidate = null;
             if (Selection.activeObject != null && Selection.activeObject is XNode.Node) {
-                onValidate = Selection.activeObject.GetType().GetMethod("OnValidate");
+                onValidate = GetCachedOnValidate(Selection.activeObject.GetType());
                 if (onValidate != null) EditorGUI.BeginChangeCheck();
             }
 
@@ -440,7 +452,9 @@ namespace XNodeEditor {
                 hoveredPort = null;
             }
 
-            List<UnityEngine.Object> preSelection = preBoxSelection != null ? new List<UnityEngine.Object>(preBoxSelection) : new List<UnityEngine.Object>();
+            bool isBoxSelecting = e.type != EventType.Layout && _activity == NodeActivity.DragGrid;
+            boxSelectionNodes.Clear();
+            if (isBoxSelecting && preBoxSelection != null) boxSelectionNodes.AddRange(preBoxSelection);
 
             // 框选矩形
             Vector2 boxStartPos = GridToWindowPositionNoClipped(dragBoxStart);
@@ -452,9 +466,20 @@ namespace XNodeEditor {
             // 保存 GUI 颜色以便还原
             Color guiColor = GUI.color;
 
-            List<XNode.NodePort> removeEntries = new List<XNode.NodePort>();
-
             if (e.type == EventType.Layout) culledNodes.Clear();
+            if (e.type == EventType.Repaint) {
+                // 重绘帧开始时统一清理不可见节点的端口锚点缓存，避免逐节点扫描端口表
+                portEntriesToRemove.Clear();
+                foreach (var kvp in _portConnectionPoints) {
+                    XNode.NodePort port = kvp.Key;
+                    if (port == null || port.node == null || !culledNodes.Contains(port.node)) {
+                        portEntriesToRemove.Add(port);
+                    }
+                }
+                for (int i = 0; i < portEntriesToRemove.Count; i++) {
+                    _portConnectionPoints.Remove(portEntriesToRemove[i]);
+                }
+            }
             for (int n = 0; n < graph.nodes.Count; n++) {
                 // 重命名脚本等操作中节点可能为 null，此时跳过而不是移除
                 if (graph.nodes[n] == null) continue;
@@ -470,16 +495,9 @@ namespace XNodeEditor {
                     }
                 } else if (culledNodes.Contains(node)) continue;
 
-                if (e.type == EventType.Repaint) {
-                    removeEntries.Clear();
-                    foreach (var kvp in _portConnectionPoints)
-                        if (kvp.Key.node == node) removeEntries.Add(kvp.Key);
-                    foreach (var k in removeEntries) _portConnectionPoints.Remove(k);
-                }
-
                 NodeEditor nodeEditor = NodeEditor.GetEditor(node, this);
 
-                NodeEditor.portPositions.Clear();
+                portPositions.Clear();
 
                 // 默认标签宽度，OnBodyGUI 内可覆写
                 EditorGUIUtility.labelWidth = 84;
@@ -493,18 +511,14 @@ namespace XNodeEditor {
 
                 // 选中节点包一层高亮描边样式（样式对在 NodeEditor 内缓存，避免每帧拷贝 GUIStyle）
                 if (selected) {
-                    GUIStyle style = new GUIStyle(nodeEditor.GetBodyStyle());
-                    GUIStyle highlightStyle = new GUIStyle(nodeEditor.GetBodyHighlightStyle());
-                    highlightStyle.padding = style.padding;
-                    style.padding = new RectOffset();
+                    nodeEditor.GetBodyStylesForSelection(out GUIStyle style, out GUIStyle highlightStyle);
                     GUI.color = nodeEditor.GetTint();
                     GUILayout.BeginVertical(style);
                     GUI.color = NodeEditorPreferences.GetSettings().highlightColor;
-                    GUILayout.BeginVertical(new GUIStyle(highlightStyle));
+                    GUILayout.BeginVertical(highlightStyle);
                 } else {
-                    GUIStyle style = new GUIStyle(nodeEditor.GetBodyStyle());
                     GUI.color = nodeEditor.GetTint();
-                    GUILayout.BeginVertical(style);
+                    GUILayout.BeginVertical(nodeEditor.GetBodyStyle());
                 }
 
                 GUI.color = guiColor;
@@ -526,10 +540,9 @@ namespace XNodeEditor {
                 // 缓存节点尺寸与端口锚点供下一帧使用
                 if (e.type == EventType.Repaint) {
                     Vector2 size = GUILayoutUtility.GetLastRect().size;
-                    if (nodeSizes.ContainsKey(node)) nodeSizes[node] = size;
-                    else nodeSizes.Add(node, size);
+                    nodeSizes[node] = size;
 
-                    foreach (var kvp in NodeEditor.portPositions) {
+                    foreach (var kvp in portPositions) {
                         Vector2 portHandlePos = kvp.Value;
                         portHandlePos += node.position;
                         Rect rect = new Rect(portHandlePos.x - 8, portHandlePos.y - 8, 16, 16);
@@ -545,22 +558,22 @@ namespace XNodeEditor {
                     Rect windowRect = new Rect(nodePos, nodeSize);
                     if (windowRect.Contains(mousePos)) hoveredNode = node;
 
-                    //If dragging a selection box, add nodes inside to selection
-                    if (currentActivity == NodeActivity.DragGrid) {
-                        if (windowRect.Overlaps(selectionBox)) preSelection.Add(node);
+                    // 框选进行中：节点在框内则加入待选集合
+                    if (isBoxSelecting) {
+                        if (windowRect.Overlaps(selectionBox)) boxSelectionNodes.Add(node);
                     }
 
-                    //Check if we are hovering any of this nodes ports
-                    //Check input ports
-                    foreach (XNode.NodePort input in node.Inputs) {
-                        //Check if port rect is available
+                    // 检测鼠标是否悬停在本节点的任一端口上（两个循环顺序执行，共用缓冲）
+                    node.GetInputs(portBuffer);
+                    node.GetOutputs(portBuffer2);
+                    for (int p = 0; p < portBuffer.Count; p++) {
+                        XNode.NodePort input = portBuffer[p];
                         if (!portConnectionPoints.ContainsKey(input)) continue;
                         Rect r = GridToWindowRectNoClipped(portConnectionPoints[input]);
                         if (r.Contains(mousePos)) hoveredPort = input;
                     }
-                    //Check all output ports
-                    foreach (XNode.NodePort output in node.Outputs) {
-                        //Check if port rect is available
+                    for (int p = 0; p < portBuffer2.Count; p++) {
+                        XNode.NodePort output = portBuffer2[p];
                         if (!portConnectionPoints.ContainsKey(output)) continue;
                         Rect r = GridToWindowRectNoClipped(portConnectionPoints[output]);
                         if (r.Contains(mousePos)) hoveredPort = output;
@@ -570,22 +583,40 @@ namespace XNodeEditor {
                 GUILayout.EndArea();
             }
 
-            if (e.type != EventType.Layout && currentActivity == NodeActivity.DragGrid) Selection.objects = preSelection.ToArray();
+            if (isBoxSelecting) Selection.objects = boxSelectionNodes.ToArray();
             EndZoomed(position, zoom, topPadding);
 
             // 选中节点的值变更时调用其 OnValidate
             if (onValidate != null && EditorGUI.EndChangeCheck()) onValidate.Invoke(Selection.activeObject, null);
         }
 
+        // 悬停提示的复用 GUIContent，避免悬停期间每帧分配
+        private GUIContent _tooltipContent;
+        // 节点类型 -> OnValidate 方法缓存；null 值同样缓存，避免每帧重复 GetMethod
+        private static readonly Dictionary<System.Type, System.Reflection.MethodInfo> onValidateCache = new Dictionary<System.Type, System.Reflection.MethodInfo>();
+
+        /// <summary> 按类型取 OnValidate 方法（带缓存），未定义返回 null </summary>
+        private static System.Reflection.MethodInfo GetCachedOnValidate(System.Type nodeType) {
+            System.Reflection.MethodInfo method;
+            if (!onValidateCache.TryGetValue(nodeType, out method)) {
+                method = nodeType.GetMethod("OnValidate", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                onValidateCache.Add(nodeType, method);
+            }
+            return method;
+        }
+
+        /// <summary> 未选中且在视口外的节点可被剔除渲染 </summary>
         private bool ShouldBeCulled(XNode.Node node) {
 
             Vector2 nodePos = GridToWindowPositionNoClipped(node.position);
-            if (nodePos.x / _zoom > position.width) return true; // Right
-            else if (nodePos.y / _zoom > position.height) return true; // Bottom
-            else if (nodeSizes.ContainsKey(node)) {
-                Vector2 size = nodeSizes[node];
-                if (nodePos.x + size.x < 0) return true; // Left
-                else if (nodePos.y + size.y < 0) return true; // Top
+            if (nodePos.x / _zoom > position.width) return true; // 右侧
+            else if (nodePos.y / _zoom > position.height) return true; // 下侧
+            else {
+                Vector2 size;
+                if (nodeSizes.TryGetValue(node, out size)) {
+                    if (nodePos.x + size.x < 0) return true; // 左侧
+                    else if (nodePos.y + size.y < 0) return true; // 上侧
+                }
             }
             return false;
         }
@@ -601,12 +632,14 @@ namespace XNodeEditor {
                 tooltip = NodeEditor.GetEditor(hoveredNode, this).GetHeaderTooltip();
             }
             if (string.IsNullOrEmpty(tooltip)) return;
-            GUIContent content = new GUIContent(tooltip);
-            Vector2 size = NodeEditorResources.styles.tooltip.CalcSize(content);
+            // GUIContent 复用实例，悬停期间每帧刷新文本不再分配
+            if (_tooltipContent == null) _tooltipContent = new GUIContent();
+            _tooltipContent.text = tooltip;
+            Vector2 size = NodeEditorResources.styles.tooltip.CalcSize(_tooltipContent);
             size.x += 8;
             Rect rect = new Rect(Event.current.mousePosition - (size), size);
-            EditorGUI.LabelField(rect, content, NodeEditorResources.styles.tooltip);
-            Repaint();
+            EditorGUI.LabelField(rect, _tooltipContent, NodeEditorResources.styles.tooltip);
+            if (Event.current.type == EventType.MouseMove) Repaint();
         }
     }
 }

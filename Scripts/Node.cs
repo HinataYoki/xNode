@@ -90,21 +90,7 @@ namespace XNode {
             results.Clear();
             foreach (KeyValuePair<string, NodePort> pair in ports) if (pair.Value.IsDynamic) results.Add(pair.Value);
         }
-#endregion
-
-        /// <summary> Iterate over all ports on this node. </summary>
-        public IEnumerable<NodePort> Ports { get { foreach (NodePort port in ports.Values) yield return port; } }
-        /// <summary> Iterate over all outputs on this node. </summary>
-        public IEnumerable<NodePort> Outputs { get { foreach (NodePort port in Ports) { if (port.IsOutput) yield return port; } } }
-        /// <summary> Iterate over all inputs on this node. </summary>
-        public IEnumerable<NodePort> Inputs { get { foreach (NodePort port in Ports) { if (port.IsInput) yield return port; } } }
-        /// <summary> Iterate over all dynamic ports on this node. </summary>
-        public IEnumerable<NodePort> DynamicPorts { get { foreach (NodePort port in Ports) { if (port.IsDynamic) yield return port; } } }
-        /// <summary> Iterate over all dynamic outputs on this node. </summary>
-        public IEnumerable<NodePort> DynamicOutputs { get { foreach (NodePort port in Ports) { if (port.IsDynamic && port.IsOutput) yield return port; } } }
-        /// <summary> Iterate over all dynamic inputs on this node. </summary>
-        public IEnumerable<NodePort> DynamicInputs { get { foreach (NodePort port in Ports) { if (port.IsDynamic && port.IsInput) yield return port; } } }
-        /// <summary> Parent <see cref="NodeGraph"/> </summary>
+        /// <summary> 所属的 <see cref="NodeGraph"/> </summary>
         [SerializeField] public NodeGraph graph;
         /// <summary> 在 <see cref="NodeGraph"/> 画布上的位置 </summary>
         [SerializeField] public Vector2 position;
@@ -171,8 +157,8 @@ namespace XNode {
         /// <summary> 按字段名移除动态端口 </summary>
         public void RemoveDynamicPort(string fieldName) {
             NodePort dynamicPort = GetPort(fieldName);
-            if (dynamicPort == null) throw new ArgumentException("port " + fieldName + " doesn't exist");
-            RemoveDynamicPort(GetPort(fieldName));
+            if (dynamicPort == null) throw new ArgumentException("端口 " + fieldName + " 不存在");
+            RemoveDynamicPort(dynamicPort);
         }
 
         /// <summary> 移除动态端口；静态端口不可移除 </summary>
@@ -239,7 +225,7 @@ namespace XNode {
         /// <summary> 为指定输出端口返回值；含输出端点的节点子类应覆写本方法 </summary>
         /// <param name="port">请求值的输出端口</param>
         public virtual object GetValue(NodePort port) {
-            Debug.LogWarning("No GetValue(NodePort port) override defined for " + GetType());
+            Debug.LogWarning("类型 " + GetType() + " 未覆写 GetValue(NodePort port)");
             return null;
         }
 #endregion

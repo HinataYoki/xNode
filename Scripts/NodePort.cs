@@ -84,8 +84,8 @@ namespace XNode {
                     _connectionType = (attribs[i] as Node.OutputAttribute).connectionType;
                     _typeConstraint = (attribs[i] as Node.OutputAttribute).typeConstraint;
                 }
-                // Override ValueType of the Port
-                if(attribs[i] is PortTypeOverrideAttribute) {
+                // 用特性覆盖端口值类型（配合 PortTypeOverride）
+                if (attribs[i] is PortTypeOverrideAttribute) {
                     ValueType = (attribs[i] as PortTypeOverrideAttribute).type;
                 }
             }
@@ -272,7 +272,7 @@ namespace XNode {
 
         /// <summary> 取连接指定端口的那条连接在列表中的索引，不存在返回 -1 </summary>
         public int GetConnectionIndex(NodePort port) {
-            for (int i = 0; i < ConnectionCount; i++) {
+            for (int i = 0; i < connections.Count; i++) {
                 if (connections[i].Port == port) return i;
             }
             return -1;
@@ -323,9 +323,7 @@ namespace XNode {
         public void Disconnect(NodePort port) {
             // 移除本端指向对方的连接
             for (int i = connections.Count - 1; i >= 0; i--) {
-                if (connections[i].Port == port) {
-                    connections.RemoveAt(i);
-                }
+                if (connections[i].Port == port) connections.RemoveAt(i);
             }
             if (port != null) {
                 // 移除对方指回本端的连接并触发其回调
@@ -360,18 +358,13 @@ namespace XNode {
 
         /// <summary> 与另一端口互换全部连接（用于编辑器端口交换操作） </summary>
         public void SwapConnections(NodePort targetPort) {
-            int aConnectionCount = connections.Count;
-            int bConnectionCount = targetPort.connections.Count;
-
-            List<NodePort> portConnections = new List<NodePort>();
-            List<NodePort> targetPortConnections = new List<NodePort>();
-
-            // Cache port connections
-            for (int i = 0; i < aConnectionCount; i++)
+            // 先快照两侧连接，清空后交叉重连，避免遍历中修改列表
+            List<NodePort> portConnections = new List<NodePort>(connections.Count);
+            for (int i = 0; i < connections.Count; i++)
                 portConnections.Add(connections[i].Port);
 
-            // Cache target port connections
-            for (int i = 0; i < bConnectionCount; i++)
+            List<NodePort> targetPortConnections = new List<NodePort>(targetPort.connections.Count);
+            for (int i = 0; i < targetPort.connections.Count; i++)
                 targetPortConnections.Add(targetPort.connections[i].Port);
 
             ClearConnections();
@@ -388,9 +381,7 @@ namespace XNode {
         public void AddConnections(NodePort targetPort) {
             int connectionCount = targetPort.ConnectionCount;
             for (int i = 0; i < connectionCount; i++) {
-                PortConnection connection = targetPort.connections[i];
-                NodePort otherPort = connection.Port;
-                Connect(otherPort);
+                Connect(targetPort.connections[i].Port);
             }
         }
 
@@ -398,14 +389,16 @@ namespace XNode {
         public void MoveConnections(NodePort targetPort) {
             if (targetPort == null) throw new ArgumentNullException("targetPort");
 
-            // Add connections to target port
-            for (int i = 0; i < connectionCount; i++) {
-                PortConnection connection = targetPort.connections[i];
-                NodePort otherPort = connection.Port;
-                Connect(otherPort);
+            List<NodePort> portConnections = new List<NodePort>(connections.Count);
+            for (int i = 0; i < connections.Count; i++) {
+                NodePort otherPort = connections[i].Port;
+                if (otherPort != null) portConnections.Add(otherPort);
             }
 
             ClearConnections();
+            for (int i = 0; i < portConnections.Count; i++) {
+                targetPort.Connect(portConnections[i]);
+            }
         }
 
         /// <summary> 图深拷贝后，把旧节点列表的引用批量重定向到新节点列表 </summary>

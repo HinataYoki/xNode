@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using XNodeEditor.Internal;
@@ -11,23 +10,48 @@ using GenericMenu = XNodeEditor.AdvancedGenericMenu;
 namespace XNodeEditor {
     public partial class NodeEditorWindow {
         public enum NodeActivity { Idle, HoldNode, DragNode, HoldGrid, DragGrid }
-        public static NodeActivity currentActivity = NodeActivity.Idle;
-        public static bool isPanning { get; private set; }
-        public static Vector2[] dragOffset;
 
         public static XNode.Node[] copyBuffer = null;
+
+        /// <summary>
+        /// 兼容门面：转发到最近聚焦窗口（<see cref="current"/>）的交互状态。
+        /// 交互状态本体已按窗口实例隔离，多窗口互不干扰；current 为 null 时读返回默认值、写被忽略。
+        /// </summary>
+        public static NodeActivity currentActivity {
+            get { return current != null ? current._activity : NodeActivity.Idle; }
+            set { if (current != null) current._activity = value; }
+        }
+        /// <summary> 兼容门面：语义同 <see cref="currentActivity"/> </summary>
+        public static bool isPanning {
+            get { return current != null ? current._isPanning : false; }
+            private set { if (current != null) current._isPanning = value; }
+        }
+        /// <summary> 兼容门面：语义同 <see cref="currentActivity"/> </summary>
+        public static Vector2[] dragOffset {
+            get { return current != null ? current._dragOffset : null; }
+            set { if (current != null) current._dragOffset = value; }
+        }
+
+        /// <summary> 本窗口当前交互阶段（拖节点/拖框选/平移等） </summary>
+        [NonSerialized] private NodeActivity _activity = NodeActivity.Idle;
+        /// <summary> 本窗口是否正在按住右/中键平移画布 </summary>
+        [NonSerialized] private bool _isPanning;
+        /// <summary> 拖动开始时记录的各选中节点/重路由点相对鼠标的偏移表 </summary>
+        [NonSerialized] private Vector2[] _dragOffset;
+        /// <summary> 端口枚举复用缓冲，替代拖动路径的 yield 迭代器 </summary>
+        [NonSerialized] private readonly List<XNode.NodePort> _portBuffer = new List<XNode.NodePort>(16);
 
         public bool IsDraggingPort { get { return draggedOutput != null; } }
         public bool IsHoveringPort { get { return hoveredPort != null; } }
         public bool IsHoveringNode { get { return hoveredNode != null; } }
         public bool IsHoveringReroute { get { return hoveredReroute.port != null; } }
 
-        /// <summary> Return the dragged port or null if not exist </summary>
-        public XNode.NodePort DraggedOutputPort { get { XNode.NodePort result = draggedOutput; return result; } }
-        /// <summary> Return the Hovered port or null if not exist </summary>
-        public XNode.NodePort HoveredPort { get { XNode.NodePort result = hoveredPort; return result; } }
-        /// <summary> Return the Hovered node or null if not exist </summary>
-        public XNode.Node HoveredNode { get { XNode.Node result = hoveredNode; return result; } }
+        /// <summary> 拖拽中的输出端口；未拖线时为 null </summary>
+        public XNode.NodePort DraggedOutputPort { get { return draggedOutput; } }
+        /// <summary> 当前悬停的端口 </summary>
+        public XNode.NodePort HoveredPort { get { return hoveredPort; } }
+        /// <summary> 当前悬停的节点 </summary>
+        public XNode.Node HoveredNode { get { return hoveredNode; } }
 
         private XNode.Node hoveredNode = null;
         [NonSerialized] public XNode.NodePort hoveredPort = null;
@@ -38,7 +62,7 @@ namespace XNodeEditor {
 
         /// <summary> 当前鼠标悬停的重路由点引用；每帧在 DrawConnections 中重算 </summary>
         private RerouteReference hoveredReroute = new RerouteReference();
-        public List<RerouteReference> selectedReroutes = new List<RerouteReference>();
+        [NonSerialized] public List<RerouteReference> selectedReroutes = new List<RerouteReference>();
         private Vector2 dragBoxStart;
         private UnityEngine.Object[] preBoxSelection;
         private RerouteReference[] preBoxSelectionReroute;
@@ -81,13 +105,13 @@ namespace XNodeEditor {
                                 draggedOutputTarget = null;
                             }
                             Repaint();
-                        } else if (currentActivity == NodeActivity.HoldNode) {
+                        } else if (_activity == NodeActivity.HoldNode) {
                             RecalculateDragOffsets(e);
-                            currentActivity = NodeActivity.DragNode;
+                            _activity = NodeActivity.DragNode;
                             Repaint();
                         }
-                        if (currentActivity == NodeActivity.DragNode) {
-                            // Holding ctrl inverts grid snap
+                        if (_activity == NodeActivity.DragNode) {
+                            // 按住 Ctrl 反转网格吸附开关
                             bool gridSnap = NodeEditorPreferences.GetSettings().gridSnap;
                             if (e.control) gridSnap = !gridSnap;
 
@@ -98,7 +122,7 @@ namespace XNodeEditor {
                                     XNode.Node node = Selection.objects[i] as XNode.Node;
                                     Undo.RecordObject(node, "Moved Node");
                                     Vector2 initial = node.position;
-                                    node.position = mousePos + dragOffset[i];
+                                    node.position = mousePos + _dragOffset[i];
                                     if (gridSnap) {
                                         node.position.x = (Mathf.Round((node.position.x + 8) / 16) * 16) - 8;
                                         node.position.y = (Mathf.Round((node.position.y + 8) / 16) * 16) - 8;
@@ -107,19 +131,12 @@ namespace XNodeEditor {
                                     // 节点被拖动时立即平移端口锚点缓存，避免连线延迟一帧才跟随
                                     Vector2 offset = node.position - initial;
                                     if (offset.sqrMagnitude > 0) {
-                                        foreach (XNode.NodePort output in node.Outputs) {
+                                        node.GetPorts(_portBuffer);
+                                        for (int p = 0; p < _portBuffer.Count; p++) {
                                             Rect rect;
-                                            if (portConnectionPoints.TryGetValue(output, out rect)) {
+                                            if (portConnectionPoints.TryGetValue(_portBuffer[p], out rect)) {
                                                 rect.position += offset;
-                                                portConnectionPoints[output] = rect;
-                                            }
-                                        }
-
-                                        foreach (XNode.NodePort input in node.Inputs) {
-                                            Rect rect;
-                                            if (portConnectionPoints.TryGetValue(input, out rect)) {
-                                                rect.position += offset;
-                                                portConnectionPoints[input] = rect;
+                                                portConnectionPoints[_portBuffer[p]] = rect;
                                             }
                                         }
                                     }
@@ -127,7 +144,7 @@ namespace XNodeEditor {
                             }
                             // 按偏移量移动选中的重路由点
                             for (int i = 0; i < selectedReroutes.Count; i++) {
-                                Vector2 pos = mousePos + dragOffset[Selection.objects.Length + i];
+                                Vector2 pos = mousePos + _dragOffset[Selection.objects.Length + i];
                                 if (gridSnap) {
                                     pos.x = (Mathf.Round(pos.x / 16) * 16);
                                     pos.y = (Mathf.Round(pos.y / 16) * 16);
@@ -135,13 +152,14 @@ namespace XNodeEditor {
                                 selectedReroutes[i].SetPoint(pos);
                             }
                             Repaint();
-                        } else if (currentActivity == NodeActivity.HoldGrid) {
-                            currentActivity = NodeActivity.DragGrid;
+                        } else if (_activity == NodeActivity.HoldGrid) {
+                            _activity = NodeActivity.DragGrid;
                             preBoxSelection = Selection.objects;
                             preBoxSelectionReroute = selectedReroutes.ToArray();
                             dragBoxStart = WindowToGridPosition(e.mousePosition);
                             Repaint();
-                        } else if (currentActivity == NodeActivity.DragGrid) {
+                        } else if (_activity == NodeActivity.DragGrid) {
+                            // 框选：归一化负尺寸后记录选择框
                             Vector2 boxStartPos = GridToWindowPosition(dragBoxStart);
                             Vector2 boxSize = e.mousePosition - boxStartPos;
                             if (boxSize.x < 0) { boxStartPos.x += boxSize.x; boxSize.x = Mathf.Abs(boxSize.x); }
@@ -153,7 +171,7 @@ namespace XNodeEditor {
                         // 大屏幕下拖动阈值校验，避免点击误判为平移
                         if (e.delta.magnitude > dragThreshold) {
                             panOffset += e.delta * zoom;
-                            isPanning = true;
+                            _isPanning = true;
                         }
                     }
                     break;
@@ -193,7 +211,7 @@ namespace XNodeEditor {
                             isDoubleClick = (e.clickCount == 2);
 
                             e.Use();
-                            currentActivity = NodeActivity.HoldNode;
+                            _activity = NodeActivity.HoldNode;
                         } else if (IsHoveringReroute) {
                             // 按在重路由点上：处理选择/反选
                             if (!selectedReroutes.Contains(hoveredReroute)) {
@@ -206,11 +224,11 @@ namespace XNodeEditor {
                             }
                             else if (e.control || e.shift) selectedReroutes.Remove(hoveredReroute);
                             e.Use();
-                            currentActivity = NodeActivity.HoldNode;
+                            _activity = NodeActivity.HoldNode;
                         }
                         // 按在画布空白处：开始框选或清除选择
                         else if (!IsHoveringNode) {
-                            currentActivity = NodeActivity.HoldGrid;
+                            _activity = NodeActivity.HoldGrid;
                             if (!e.control && !e.shift) {
                                 selectedReroutes.Clear();
                                 Selection.activeObject = null;
@@ -238,7 +256,7 @@ namespace XNodeEditor {
                             // 拖到空白处：按偏好设置弹出"拖线创建节点"菜单
                             else if (draggedOutputTarget == null && NodeEditorPreferences.GetSettings().dragToCreate && autoConnectOutput != null) {
                                 GenericMenu menu = new GenericMenu();
-                                graphEditor.AddContextMenuItems(menu, draggedOutput.ValueType);
+                                graphEditor.AddContextMenuItems(menu, draggedOutput);
                                 menu.DropDown(new Rect(Event.current.mousePosition, Vector2.zero));
                             }
                             draggedOutput = null;
@@ -252,22 +270,23 @@ namespace XNodeEditor {
                             }
                             if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
                         } else if (!IsHoveringNode) {
-                            // If click outside node, release field focus
-                            if (!isPanning) {
+                            // 点击画布空白处：释放字段焦点
+                            if (!_isPanning) {
                                 EditorGUI.FocusTextInControl(null);
                                 EditorGUIUtility.editingTextField = false;
                             }
                             if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
                         }
 
-                        // If click node header, select it.
-                        if (currentActivity == NodeActivity.HoldNode && !(e.control || e.shift)) {
+                        // 点击节点标题栏：选中它；双击则居中该节点
+                        if (_activity == NodeActivity.HoldNode && !(e.control || e.shift)) {
                             selectedReroutes.Clear();
                             SelectNode(hoveredNode, false);
 
                             if (isDoubleClick) {
-                                Vector2 nodeDimension = nodeSizes.ContainsKey(hoveredNode) ? nodeSizes[hoveredNode] / 2 : Vector2.zero;
-                                panOffset = -hoveredNode.position - nodeDimension;
+                                Vector2 size;
+                                nodeSizes.TryGetValue(hoveredNode, out size);
+                                panOffset = -hoveredNode.position - size / 2;
                             }
                         }
 
@@ -278,13 +297,15 @@ namespace XNodeEditor {
                         }
 
                         Repaint();
-                        currentActivity = NodeActivity.Idle;
+                        _activity = NodeActivity.Idle;
                     } else if (e.button == 1 || e.button == 2) {
-                        if (!isPanning) {
+                        // 右键/中键：没在平移时按悬停对象弹出对应上下文菜单
+                        if (!_isPanning) {
                             if (IsDraggingPort) {
                                 // 拖线中右键：在鼠标处添加重路由点
                                 draggedOutputReroutes.Add(WindowToGridPosition(e.mousePosition));
-                            } else if (currentActivity == NodeActivity.DragNode && Selection.activeObject == null && selectedReroutes.Count == 1) {
+                            } else if (_activity == NodeActivity.DragNode && Selection.activeObject == null && selectedReroutes.Count == 1) {
+                                // 拖动单个重路由点时右键：在当前位置后插入新点
                                 selectedReroutes[0].InsertPoint(selectedReroutes[0].GetPoint());
                                 selectedReroutes[0] = new RerouteReference(selectedReroutes[0].port, selectedReroutes[0].connectionIndex, selectedReroutes[0].pointIndex + 1);
                             } else if (IsHoveringReroute) {
@@ -305,7 +326,7 @@ namespace XNodeEditor {
                                 menu.DropDown(new Rect(Event.current.mousePosition, Vector2.zero));
                             }
                         }
-                        isPanning = false;
+                        _isPanning = false;
                     }
                     // 重置双击状态
                     isDoubleClick = false;
@@ -321,13 +342,13 @@ namespace XNodeEditor {
                     }
                     // A 键：全选/取消全选本图节点
                     if (e.keyCode == KeyCode.A) {
-                        if (Selection.objects.Any(x => graph.nodes.Contains(x as XNode.Node))) {
-                            foreach (XNode.Node node in graph.nodes) {
-                                DeselectNode(node);
+                        if (Selection.objects.Length > 0 && HasSelectedNodes()) {
+                            for (int i = 0; i < graph.nodes.Count; i++) {
+                                DeselectNode(graph.nodes[i]);
                             }
                         } else {
-                            foreach (XNode.Node node in graph.nodes) {
-                                SelectNode(node, true);
+                            for (int i = 0; i < graph.nodes.Count; i++) {
+                                SelectNode(graph.nodes[i], true);
                             }
                         }
                         Repaint();
@@ -358,36 +379,59 @@ namespace XNodeEditor {
                     Repaint();
                     break;
                 case EventType.Ignore:
-                    // If release mouse outside window
-                    if (e.rawType == EventType.MouseUp && currentActivity == NodeActivity.DragGrid) {
+                    // 鼠标在窗口外释放时结束框选
+                    if (e.rawType == EventType.MouseUp && _activity == NodeActivity.DragGrid) {
                         Repaint();
-                        currentActivity = NodeActivity.Idle;
+                        _activity = NodeActivity.Idle;
                     }
                     break;
             }
         }
 
+        /// <summary> 当前 Selection 是否包含本图节点（替代 LINQ，OnGUI 路径零分配） </summary>
+        private bool HasSelectedNodes() {
+            UnityEngine.Object[] selection = Selection.objects;
+            for (int i = 0; i < selection.Length; i++) {
+                if (selection[i] is XNode.Node && graph.nodes.Contains(selection[i] as XNode.Node)) return true;
+            }
+            return false;
+        }
+
+        /// <summary> 记录每个选中节点/重路由点相对鼠标的偏移，供拖动时使用 </summary>
         private void RecalculateDragOffsets(Event current) {
-            dragOffset = new Vector2[Selection.objects.Length + selectedReroutes.Count];
-            // Selected nodes
+            _dragOffset = new Vector2[Selection.objects.Length + selectedReroutes.Count];
             for (int i = 0; i < Selection.objects.Length; i++) {
                 if (Selection.objects[i] is XNode.Node) {
                     XNode.Node node = Selection.objects[i] as XNode.Node;
-                    dragOffset[i] = node.position - WindowToGridPosition(current.mousePosition);
+                    _dragOffset[i] = node.position - WindowToGridPosition(current.mousePosition);
                 }
             }
 
             for (int i = 0; i < selectedReroutes.Count; i++) {
-                dragOffset[Selection.objects.Length + i] = selectedReroutes[i].GetPoint() - WindowToGridPosition(current.mousePosition);
+                _dragOffset[Selection.objects.Length + i] = selectedReroutes[i].GetPoint() - WindowToGridPosition(current.mousePosition);
             }
         }
 
         /// <summary> 把全部选中节点置于视野中心；无选中节点时重置视图与缩放到原点 </summary>
         public void Home() {
-            var nodes = Selection.objects.Where(o => o is XNode.Node).Cast<XNode.Node>().ToList();
-            if (nodes.Count > 0) {
-                Vector2 minPos = nodes.Select(x => x.position).Aggregate((x, y) => new Vector2(Mathf.Min(x.x, y.x), Mathf.Min(x.y, y.y)));
-                Vector2 maxPos = nodes.Select(x => x.position + (nodeSizes.ContainsKey(x) ? nodeSizes[x] : Vector2.zero)).Aggregate((x, y) => new Vector2(Mathf.Max(x.x, y.x), Mathf.Max(x.y, y.y)));
+            Vector2 minPos = Vector2.zero, maxPos = Vector2.zero;
+            bool hasNodes = false;
+            UnityEngine.Object[] selection = Selection.objects;
+            for (int i = 0; i < selection.Length; i++) {
+                XNode.Node node = selection[i] as XNode.Node;
+                if (node == null) continue;
+                Vector2 size;
+                if (!nodeSizes.TryGetValue(node, out size)) size = Vector2.zero;
+                if (hasNodes) {
+                    minPos = Vector2.Min(minPos, node.position);
+                    maxPos = Vector2.Max(maxPos, node.position + size);
+                } else {
+                    minPos = node.position;
+                    maxPos = node.position + size;
+                    hasNodes = true;
+                }
+            }
+            if (hasNodes) {
                 panOffset = -(minPos + (maxPos - minPos) / 2f);
             } else {
                 zoom = 2;
@@ -397,16 +441,15 @@ namespace XNodeEditor {
 
         /// <summary> 移除当前选中的节点与重路由点 </summary>
         public void RemoveSelectedNodes() {
-            // We need to delete reroutes starting at the highest point index to avoid shifting indices
-            selectedReroutes = selectedReroutes.OrderByDescending(x => x.pointIndex).ToList();
-            for (int i = 0; i < selectedReroutes.Count; i++) {
+            // 从高索引往低索引删，避免删除时索引位移
+            for (int i = selectedReroutes.Count - 1; i >= 0; i--) {
                 selectedReroutes[i].RemovePoint();
             }
             selectedReroutes.Clear();
-            foreach (UnityEngine.Object item in Selection.objects) {
-                if (item is XNode.Node) {
-                    XNode.Node node = item as XNode.Node;
-                    graphEditor.RemoveNode(node);
+            UnityEngine.Object[] selection = Selection.objects;
+            for (int i = 0; i < selection.Length; i++) {
+                if (selection[i] is XNode.Node) {
+                    graphEditor.RemoveNode(selection[i] as XNode.Node);
                 }
             }
         }
@@ -426,26 +469,38 @@ namespace XNodeEditor {
 
         /// <summary> 把节点移到 graph.nodes 末尾，使其绘制在其它节点之上 </summary>
         public void MoveNodeToTop(XNode.Node node) {
-            int index;
-            while ((index = graph.nodes.IndexOf(node)) != graph.nodes.Count - 1) {
-                graph.nodes[index] = graph.nodes[index + 1];
-                graph.nodes[index + 1] = node;
-            }
+            graph.nodes.Remove(node);
+            graph.nodes.Add(node);
         }
 
         /// <summary> 复制选中节点并选中新副本 </summary>
         public void DuplicateSelectedNodes() {
-            // Get selected nodes which are part of this graph
-            XNode.Node[] selectedNodes = Selection.objects.Select(x => x as XNode.Node).Where(x => x != null && x.graph == graph).ToArray();
-            if (selectedNodes == null || selectedNodes.Length == 0) return;
-            // Get top left node position
-            Vector2 topLeftNode = selectedNodes.Select(x => x.position).Aggregate((x, y) => new Vector2(Mathf.Min(x.x, y.x), Mathf.Min(x.y, y.y)));
-            InsertDuplicateNodes(selectedNodes, topLeftNode + new Vector2(30, 30));
+            // 只取属于当前图的选中节点
+            List<XNode.Node> selectedNodes = new List<XNode.Node>();
+            UnityEngine.Object[] selection = Selection.objects;
+            for (int i = 0; i < selection.Length; i++) {
+                XNode.Node node = selection[i] as XNode.Node;
+                if (node != null && node.graph == graph) selectedNodes.Add(node);
+            }
+            if (selectedNodes.Count == 0) return;
+
+            // 以左上角节点为基准整体偏移 30 像素
+            Vector2 topLeftNode = selectedNodes[0].position;
+            for (int i = 1; i < selectedNodes.Count; i++) {
+                topLeftNode = Vector2.Min(topLeftNode, selectedNodes[i].position);
+            }
+            InsertDuplicateNodes(selectedNodes.ToArray(), topLeftNode + new Vector2(30, 30));
         }
 
         /// <summary> 把选中节点复制进剪贴缓冲 </summary>
         public void CopySelectedNodes() {
-            copyBuffer = Selection.objects.Select(x => x as XNode.Node).Where(x => x != null && x.graph == graph).ToArray();
+            List<XNode.Node> copied = new List<XNode.Node>();
+            UnityEngine.Object[] selection = Selection.objects;
+            for (int i = 0; i < selection.Length; i++) {
+                XNode.Node node = selection[i] as XNode.Node;
+                if (node != null && node.graph == graph) copied.Add(node);
+            }
+            copyBuffer = copied.ToArray();
         }
 
         /// <summary> 把剪贴缓冲中的节点粘贴到指定位置 </summary>
@@ -457,8 +512,11 @@ namespace XNodeEditor {
         private void InsertDuplicateNodes(XNode.Node[] nodes, Vector2 topLeft) {
             if (nodes == null || nodes.Length == 0) return;
 
-            // Get top-left node
-            Vector2 topLeftNode = nodes.Select(x => x.position).Aggregate((x, y) => new Vector2(Mathf.Min(x.x, y.x), Mathf.Min(x.y, y.y)));
+            // 以左上角节点为基准计算整体偏移
+            Vector2 topLeftNode = nodes[0].position;
+            for (int i = 1; i < nodes.Length; i++) {
+                topLeftNode = Vector2.Min(topLeftNode, nodes[i].position);
+            }
             Vector2 offset = topLeft - topLeftNode;
 
             UnityEngine.Object[] newNodes = new UnityEngine.Object[nodes.Length];
@@ -471,7 +529,10 @@ namespace XNodeEditor {
                 XNode.Node.DisallowMultipleNodesAttribute disallowAttrib;
                 Type nodeType = srcNode.GetType();
                 if (NodeEditorUtilities.GetAttrib(nodeType, out disallowAttrib)) {
-                    int typeCount = graph.nodes.Count(x => x.GetType() == nodeType);
+                    int typeCount = 0;
+                    for (int j = 0; j < graph.nodes.Count; j++) {
+                        if (graph.nodes[j] != null && graph.nodes[j].GetType() == nodeType) typeCount++;
+                    }
                     if (typeCount >= disallowAttrib.max) continue;
                 }
 
@@ -517,19 +578,19 @@ namespace XNodeEditor {
                 // 拖线的路径点：起点锚点 + 途中重路由点 + 鼠标/目标端口
                 Rect fromRect;
                 if (!_portConnectionPoints.TryGetValue(draggedOutput, out fromRect)) return;
-                List<Vector2> gridPoints = new List<Vector2>();
-                gridPoints.Add(fromRect.center);
+                draggedConnectionGridPoints.Clear();
+                draggedConnectionGridPoints.Add(fromRect.center);
                 for (int i = 0; i < draggedOutputReroutes.Count; i++) {
-                    gridPoints.Add(draggedOutputReroutes[i]);
+                    draggedConnectionGridPoints.Add(draggedOutputReroutes[i]);
                 }
-                if (draggedOutputTarget != null) gridPoints.Add(portConnectionPoints[draggedOutputTarget].center);
-                else gridPoints.Add(WindowToGridPosition(Event.current.mousePosition));
+                if (draggedOutputTarget != null) draggedConnectionGridPoints.Add(portConnectionPoints[draggedOutputTarget].center);
+                else draggedConnectionGridPoints.Add(WindowToGridPosition(Event.current.mousePosition));
 
-                DrawNoodle(gradient, path, stroke, thickness, gridPoints);
+                DrawNoodle(gradient, path, stroke, thickness, draggedConnectionGridPoints);
 
                 GUIStyle portStyle = NodeEditorWindow.current.graphEditor.GetPortStyle(draggedOutput);
                 Color bgcol = Color.black;
-                Color frcol = gradient.colorKeys[0].color;
+                Color frcol = graphEditor.GetPortColor(draggedOutput);
                 bgcol.a = 0.6f;
                 frcol.a = 0.6f;
 
@@ -560,9 +621,13 @@ namespace XNodeEditor {
         public void AutoConnect(XNode.Node node) {
             if (autoConnectOutput == null) return;
 
-            // Find compatible input port
-            XNode.NodePort inputPort = node.Ports.FirstOrDefault(x => x.IsInput && graphEditor.CanConnect(autoConnectOutput, x));
-            if (inputPort != null) autoConnectOutput.Connect(inputPort);
+            // 找到第一个兼容的输入端口并连接
+            foreach (XNode.NodePort port in node.Ports) {
+                if (port.IsInput && graphEditor.CanConnect(autoConnectOutput, port)) {
+                    autoConnectOutput.Connect(port);
+                    break;
+                }
+            }
 
             EditorUtility.SetDirty(graph);
             if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();

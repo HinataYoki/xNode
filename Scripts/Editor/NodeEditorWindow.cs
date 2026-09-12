@@ -13,6 +13,9 @@ namespace XNodeEditor {
         /// <summary> 缓存所有端口的连线锚点位置 </summary>
         public Dictionary<XNode.NodePort, Rect> portConnectionPoints { get { return _portConnectionPoints; } }
         private Dictionary<XNode.NodePort, Rect> _portConnectionPoints = new Dictionary<XNode.NodePort, Rect>();
+        /// <summary> 本帧各节点端口手柄在画布坐标系下的位置；DrawNodes 写入、NodeEditor.portPositions 门面转发到这里 </summary>
+        public Dictionary<XNode.NodePort, Vector2> portPositions { get { return _portPositions; } }
+        private Dictionary<XNode.NodePort, Vector2> _portPositions = new Dictionary<XNode.NodePort, Vector2>();
         [SerializeField] private NodePortReference[] _references = new NodePortReference[0];
         [SerializeField] private Rect[] _rects = new Rect[0];
 
@@ -49,7 +52,8 @@ namespace XNodeEditor {
         /// EditorWindow 字段会随窗口布局持久化，重载后由 <see cref="OnEnable"/> 恢复。
         /// </summary>
         private void OnDisable() {
-            // Cache portConnectionPoints before serialization starts
+            openWindows.Remove(this);
+            // 序列化开始前把锚点字典缓存进可序列化的平行数组
             int count = portConnectionPoints.Count;
             _references = new NodePortReference[count];
             _rects = new Rect[count];
@@ -63,7 +67,8 @@ namespace XNodeEditor {
 
         /// <summary> 窗口启用回调：按 OnDisable 缓存的平行数组恢复端口锚点字典（两侧长度一致才恢复） </summary>
         private void OnEnable() {
-            // Reload portConnectionPoints if there are any
+            if (!openWindows.Contains(this)) openWindows.Add(this);
+            // 窗口重载后按缓存恢复锚点字典
             int length = _references.Length;
             if (length == _rects.Length) {
                 for (int i = 0; i < length; i++) {
@@ -86,6 +91,7 @@ namespace XNodeEditor {
 
         void OnFocus() {
             current = this;
+            CleanupDestroyedCaches();
             ValidateGraphEditor();
             if (graphEditor != null) {
                 graphEditor.OnWindowFocus();
@@ -94,15 +100,42 @@ namespace XNodeEditor {
 
             dragThreshold = Math.Max(1f, Screen.width / 1000f);
         }
-        
+
+        /// <summary>
+        /// 聚焦时低频清理各缓存里已销毁对象的残留条目：
+        /// 节点/图删除后 Unity 假 null 键仍拖着托管引用，长会话会缓慢累积。
+        /// </summary>
+        private void CleanupDestroyedCaches() {
+            XNodeEditor.Internal.NodeEditorBase<NodeEditor, NodeEditor.CustomNodeEditorAttribute, XNode.Node>.CleanupDestroyedEditors();
+            XNodeEditor.Internal.NodeEditorBase<NodeGraphEditor, NodeGraphEditor.CustomNodeGraphEditorAttribute, XNode.NodeGraph>.CleanupDestroyedEditors();
+
+            List<XNode.Node> deadNodes = null;
+            foreach (var pair in _nodeSizes) {
+                if (pair.Key == null) {
+                    if (deadNodes == null) deadNodes = new List<XNode.Node>();
+                    deadNodes.Add(pair.Key);
+                }
+            }
+            if (deadNodes != null) {
+                for (int i = 0; i < deadNodes.Count; i++) _nodeSizes.Remove(deadNodes[i]);
+            }
+        }
+
         void OnLostFocus() {
             if (graphEditor != null) graphEditor.OnWindowFocusLost();
         }
 
+        /// <summary> 打开的节点编辑器窗口注册表；RepaintAll 用它替代全量对象扫描 </summary>
+        private static readonly List<NodeEditorWindow> openWindows = new List<NodeEditorWindow>();
+
+        /// <summary> 域重载后的静态初始化：重新订阅选中变化事件（域重载会清空静态事件订阅） </summary>
         [InitializeOnLoadMethod]
         private static void OnLoad() {
             Selection.selectionChanged -= OnSelectionChanged;
             Selection.selectionChanged += OnSelectionChanged;
+            // 域重载后静态注册表清空而窗口实例仍在，重新收集
+            openWindows.Clear();
+            openWindows.AddRange(Resources.FindObjectsOfTypeAll<NodeEditorWindow>());
         }
 
         /// <summary> 处理 Project 窗口选中变化：新建的场景内图自动打开编辑器 </summary>
@@ -243,9 +276,13 @@ namespace XNodeEditor {
 
         /// <summary> 重绘所有打开的节点编辑器窗口；顺带清理注册表里已关闭的窗口 </summary>
         public static void RepaintAll() {
-            NodeEditorWindow[] windows = Resources.FindObjectsOfTypeAll<NodeEditorWindow>();
-            for (int i = 0; i < windows.Length; i++) {
-                windows[i].Repaint();
+            for (int i = openWindows.Count - 1; i >= 0; i--) {
+                NodeEditorWindow w = openWindows[i];
+                if (w == null) {
+                    openWindows.RemoveAt(i);
+                    continue;
+                }
+                w.Repaint();
             }
         }
     }

@@ -144,11 +144,35 @@ namespace XNodeEditor {
             // 由此得知各端口的值类型并检查是否存在兼容类型
             foreach (FieldInfo f in XNode.NodeDataCache.GetNodeFields(nodeType)) {
                 var portAttribute = f.GetCustomAttributes(findType, false).FirstOrDefault();
-                if (portAttribute != null) {
-                    if (IsCastableTo(f.FieldType, compatibleType)) {
-                        return true;
-                    }
-                }
+                if (portAttribute == null) continue;
+
+                // 从特性取候选端口的类型约束
+                XNode.Node.TypeConstraint toConstraint = portAttribute switch
+                {
+                    XNode.Node.InputAttribute input => input.typeConstraint,
+                    XNode.Node.OutputAttribute output => output.typeConstraint,
+                    _ => XNode.Node.TypeConstraint.None,
+                };
+
+                // direction 是候选端口的朝向：Input 时候选端口在输入侧，Output 时在输出侧。
+                // 与 NodePort.CanConnectTo 相同，两侧约束都按同一对 (输入类型, 输出类型) 校验。
+                bool candidateIsInput = direction == XNode.NodePort.IO.Input;
+                Type inputType = candidateIsInput ? f.FieldType : compatibleType;
+                Type outputType = candidateIsInput ? compatibleType : f.FieldType;
+                XNode.Node.TypeConstraint inputConstraint = candidateIsInput ? toConstraint : fromConstraint;
+                XNode.Node.TypeConstraint outputConstraint = candidateIsInput ? fromConstraint : toConstraint;
+
+                // 约束是能否连接的必要条件，与 NodePort.CanConnectTo 共用同一实现
+                if (!XNode.NodePort.MatchesConstraint(inputConstraint, inputType, outputType)) continue;
+                if (!XNode.NodePort.MatchesConstraint(outputConstraint, inputType, outputType)) continue;
+
+                // 两侧都未声明约束时上述判定恒真、起不到过滤作用，
+                // 退回旧的类型启发式，否则创建菜单会列出几乎全部节点
+                if (inputConstraint == XNode.Node.TypeConstraint.None &&
+                    outputConstraint == XNode.Node.TypeConstraint.None &&
+                    !IsCastableTo(f.FieldType, compatibleType)) continue;
+
+                return true;
             }
 
             return false;

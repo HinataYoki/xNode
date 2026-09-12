@@ -39,6 +39,24 @@ namespace XNodeEditor.Internal {
 		}
 #endif
 
+		/// <summary> 清理 target 已销毁的编辑器缓存条目；Unity 对象销毁后仍留托管引用，需按假 null 移除 </summary>
+		public static void CleanupDestroyedEditors() {
+			List<K> destroyed = null;
+			foreach (KeyValuePair<K, T> pair in editors) {
+				if (pair.Key == null) {
+					if (destroyed == null) destroyed = new List<K>();
+					destroyed.Add(pair.Key);
+				}
+			}
+			if (destroyed != null) {
+				for (int i = 0; i < destroyed.Count; i++) editors.Remove(destroyed[i]);
+			}
+		}
+
+		/// <summary>
+		/// 取目标的编辑器实例：缓存命中直接返回；未命中则按目标类型解析编辑器类型、
+		/// 反射创建并缓存。返回前顺带修复 target/window/serializedObject 与当前状态的漂移。
+		/// </summary>
 		public static T GetEditor(K target, NodeEditorWindow window) {
 			if (target == null) return null;
 			T editor;

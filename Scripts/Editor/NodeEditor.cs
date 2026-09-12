@@ -19,7 +19,17 @@ namespace XNodeEditor {
 
         /// <summary> 节点在编辑器中被修改时触发 </summary>
         public static Action<XNode.Node> onUpdateNode;
-        public readonly static Dictionary<XNode.NodePort, Vector2> portPositions = new Dictionary<XNode.NodePort, Vector2>();
+
+        // OnBodyGUI 跳过的序列化属性名；提为静态避免每帧每节点分配数组
+        private static readonly string[] s_bodyExcludes = { "m_Script", "graph", "position", "ports" };
+        /// <summary>
+        /// 兼容门面：转发到最近聚焦窗口（<see cref="NodeEditorWindow.current"/>）的端口手柄位置表，
+        /// 避免多窗口共享一份导致锚点串窗。无窗口时返回内部空表，只读安全。
+        /// </summary>
+        public static Dictionary<XNode.NodePort, Vector2> portPositions {
+            get { return NodeEditorWindow.current != null ? NodeEditorWindow.current.portPositions : _orphanPortPositions; }
+        }
+        private static readonly Dictionary<XNode.NodePort, Vector2> _orphanPortPositions = new Dictionary<XNode.NodePort, Vector2>();
 
 #if ODIN_INSPECTOR
         /// <summary> Odin 绘制期间的递归守卫：置位时 Odin 特性处理器按节点编辑器环境工作 </summary>
@@ -41,7 +51,6 @@ namespace XNodeEditor {
             // serializedObject.Update(); 必须放在检视器 GUI 的开头，
             // serializedObject.ApplyModifiedProperties(); 则放在结尾。
             serializedObject.Update();
-            string[] excludes = { "m_Script", "graph", "position", "ports" };
 
 #if ODIN_INSPECTOR
             try
@@ -78,7 +87,7 @@ namespace XNodeEditor {
             bool enterChildren = true;
             while (iterator.NextVisible(enterChildren)) {
                 enterChildren = false;
-                if (excludes.Contains(iterator.name)) continue;
+                if (s_bodyExcludes.Contains(iterator.name)) continue;
                 NodeEditorGUILayout.PropertyField(iterator, true);
             }
 #endif
@@ -132,7 +141,26 @@ namespace XNodeEditor {
             return NodeEditorResources.styles.nodeHighlight;
         }
 
-        /// <summary> Override to display custom node header tooltips </summary>
+        // 选中态样式拷贝缓存：DrawNodes 需要交换主体/高亮两层的 padding，
+        // 每帧 new GUIStyle 拷贝会产生 GC，这里拷一次复用，底层纹理变化（换皮肤）时重建
+        private GUIStyle _bodyStyleCopy;
+        private GUIStyle _highlightStyleCopy;
+        private static readonly RectOffset _emptyPadding = new RectOffset();
+
+        /// <summary> 取选中节点使用的样式对：body 已清空内边距，highlight 带原始内边距作描边层 </summary>
+        internal void GetBodyStylesForSelection(out GUIStyle body, out GUIStyle highlight) {
+            GUIStyle src = GetBodyStyle();
+            if (_bodyStyleCopy == null || _bodyStyleCopy.normal.background != src.normal.background) {
+                _bodyStyleCopy = new GUIStyle(src);
+                _highlightStyleCopy = new GUIStyle(GetBodyHighlightStyle());
+                _highlightStyleCopy.padding = _bodyStyleCopy.padding;
+                _bodyStyleCopy.padding = _emptyPadding;
+            }
+            body = _bodyStyleCopy;
+            highlight = _highlightStyleCopy;
+        }
+
+        /// <summary> 重写此方法以显示自定义的节点头部工具提示 </summary>
         public virtual string GetHeaderTooltip() {
             return null;
         }

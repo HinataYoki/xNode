@@ -18,7 +18,11 @@ namespace XNodeEditor {
         /// <summary> 全部内置样式的惰性单例入口 </summary>
         public static Styles styles { get { return _styles != null ? _styles : _styles = new Styles(); } }
         public static Styles _styles = null;
-        public static GUIStyle OutputPort { get { return new GUIStyle(EditorStyles.label) { alignment = TextAnchor.UpperRight }; } }
+        /// <summary> 输出端口右对齐标签样式（基于默认 Label） </summary>
+        public static GUIStyle OutputPort { get { return _outputPort != null ? _outputPort : _outputPort = new GUIStyle(EditorStyles.label) { alignment = TextAnchor.UpperRight }; } }
+        private static GUIStyle _outputPort;
+
+        /// <summary> 编辑器各部位 GUIStyle 集合 </summary>
         public class Styles {
             public GUIStyle inputPort, outputPort, nodeHeader, nodeBody, tooltip, nodeHighlight;
 

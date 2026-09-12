@@ -9,12 +9,14 @@ namespace XNode {
         private static PortDataCache portDataCache;
         private static Dictionary<System.Type, Dictionary<string, string>> formerlySerializedAsCache;
         private static Dictionary<System.Type, string> typeQualifiedNameCache;
+        /// <summary> 各节点类型上标记了 dynamicPortList 的字段名集合；UpdatePorts 每帧判定列表端口用，避免反射 </summary>
+        private static Dictionary<System.Type, HashSet<string>> dynamicPortListFields;
         private static bool Initialized { get { return portDataCache != null; } }
 
         /// <summary> 取类型限定名并缓存，用于端口的类型按名反序列化 </summary>
         public static string GetTypeQualifiedName(System.Type type) {
-            if(typeQualifiedNameCache == null) typeQualifiedNameCache = new Dictionary<System.Type, string>();
-            
+            if (typeQualifiedNameCache == null) typeQualifiedNameCache = new Dictionary<System.Type, string>();
+
             string name;
             if (!typeQualifiedNameCache.TryGetValue(type, out name)) {
                 name = type.AssemblyQualifiedName;
@@ -30,22 +32,26 @@ namespace XNode {
         public static void UpdatePorts(Node node, Dictionary<string, NodePort> ports) {
             if (!Initialized) BuildCache();
 
-            Dictionary<string, List<NodePort>> removedPorts = new Dictionary<string, List<NodePort>>();
             System.Type nodeType = node.GetType();
+
+            Dictionary<string, NodePort> staticPorts;
+            if (!portDataCache.TryGetValue(nodeType, out staticPorts)) {
+                 staticPorts = new Dictionary<string, NodePort>();
+            }
+
+            // 快路径：现有端口与静态定义（含动态列表端口与其后背定义）完全一致时无需重建，
+            // 覆盖编辑器每帧重复调用的大多数场景
+            if (IsUpToDate(nodeType, ports, staticPorts)) return;
+
+            Dictionary<string, List<NodePort>> removedPorts = new Dictionary<string, List<NodePort>>();
 
             Dictionary<string, string> formerlySerializedAs = null;
             if (formerlySerializedAsCache != null) formerlySerializedAsCache.TryGetValue(nodeType, out formerlySerializedAs);
 
             List<NodePort> dynamicListPorts = new List<NodePort>();
 
-            Dictionary<string, NodePort> staticPorts;
-            if (!portDataCache.TryGetValue(nodeType, out staticPorts)) {
-                 staticPorts = new Dictionary<string, NodePort>();
-            }            
-
-            // Cleanup port dict - Remove nonexisting static ports - update static port types
-            // AND update dynamic ports (albeit only those in lists) too, in order to enforce proper serialisation.
-            // Loop through current node ports
+            // 清理现有端口字典：移除字段已不存在的静态端口，更新仍存在端口的类型；
+            // 动态列表端口也要同步设置，保证序列化正确
             foreach (NodePort port in ports.Values.ToArray()) {
                 NodePort staticPort;
                 if (staticPorts.TryGetValue(port.fieldName, out staticPort)) {
@@ -66,8 +72,8 @@ namespace XNode {
                     port.ClearConnections();
                     ports.Remove(port.fieldName);
                 }
-                // If the port is dynamic and is managed by a dynamic port list, flag it for reference updates
-                else if (IsDynamicListPort(port)) {
+                // 受动态端口列表管理的动态端口：标记后续同步设置
+                else if (IsDynamicListPort(nodeType, port.fieldName)) {
                     dynamicListPorts.Add(port);
                 }
             }
@@ -102,9 +108,62 @@ namespace XNode {
         }
 
         /// <summary>
-        /// Extracts the underlying types from arrays and lists, the only collections for dynamic port lists
-        /// currently supported. If the given type is not applicable (i.e. if the dynamic list port was not
-        /// defined as an array or a list), returns the given type itself.
+        /// 端口是否已与静态定义完全同步（零分配）：
+        /// 数量一致，且每个端口要么是设置匹配的静态端口，要么是设置匹配后背定义的动态列表端口。
+        /// </summary>
+        private static bool IsUpToDate(System.Type nodeType, Dictionary<string, NodePort> ports, Dictionary<string, NodePort> staticPorts) {
+            if (ports.Count != staticPorts.Count) return false;
+
+            HashSet<string> listFields = null;
+            bool hasListFields = dynamicPortListFields != null && dynamicPortListFields.TryGetValue(nodeType, out listFields);
+
+            foreach (KeyValuePair<string, NodePort> pair in ports) {
+                NodePort port = pair.Value;
+                if (port == null) return false;
+
+                NodePort staticPort;
+                if (!staticPorts.TryGetValue(pair.Key, out staticPort)) {
+                    // 动态端口：仅当它是设置与后背定义一致的动态列表端口时才算已同步
+                    if (!port.IsDynamic || !hasListFields) return false;
+                    if (!IsListPortMatchingBacking(listFields, pair.Key, port, staticPorts)) return false;
+                    continue;
+                }
+                if (port.IsDynamic) return false;
+                if (port.direction != staticPort.direction || port.connectionType != staticPort.connectionType || port.typeConstraint != staticPort.typeConstraint) return false;
+                if (port.ValueType != staticPort.ValueType) return false;
+            }
+            return true;
+        }
+
+        /// <summary> 判断一个动态端口是否属于动态列表字段，且方向/连接类型/约束/元素类型都与后背定义一致 </summary>
+        private static bool IsListPortMatchingBacking(HashSet<string> listFields, string fieldName, NodePort port, Dictionary<string, NodePort> staticPorts) {
+            foreach (string backing in listFields) {
+                // 字段名须形如 "<backing> <index>"；序号用手工解析避免 Substring 分配
+                if (fieldName.Length <= backing.Length || fieldName[backing.Length] != ' ' || !fieldName.StartsWith(backing, System.StringComparison.Ordinal)) continue;
+
+                int index = 0;
+                bool valid = fieldName.Length > backing.Length + 1;
+                for (int c = backing.Length + 1; valid && c < fieldName.Length; c++) {
+                    char ch = fieldName[c];
+                    if (ch < '0' || ch > '9') valid = false;
+                    else index = index * 10 + (ch - '0');
+                }
+                if (!valid) continue;
+
+                NodePort backingPort;
+                if (!staticPorts.TryGetValue(backing, out backingPort)) continue;
+
+                return port.direction == backingPort.direction
+                    && port.connectionType == backingPort.connectionType
+                    && port.typeConstraint == backingPort.typeConstraint
+                    && port.ValueType == GetBackingValueType(backingPort.ValueType);
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 取动态端口列表的元素类型（数组/List 的底层类型）；
+        /// 不是数组也不是 List 时原样返回。
         /// </summary>
         private static System.Type GetBackingValueType(System.Type portValType) {
             if (portValType.HasElementType) {
@@ -116,29 +175,27 @@ namespace XNode {
             return portValType;
         }
 
-        /// <summary>Returns true if the given port is in a dynamic port list.</summary>
-        private static bool IsDynamicListPort(NodePort port) {
-            // Ports flagged as "dynamicPortList = true" end up having a "backing port" and a name with an index, but we have
-            // no guarantee that a dynamic port called "output 0" is an element in a list backed by a static "output" port.
-            // Thus, we need to check for attributes... (but at least we don't need to look at all fields this time)
-            string[] fieldNameParts = port.fieldName.Split(' ');
-            if (fieldNameParts.Length != 2) return false;
+        /// <summary> 判断端口是否属于某个动态端口列表：查缓存集合做前缀匹配，零反射零字符串分配 </summary>
+        private static bool IsDynamicListPort(System.Type nodeType, string fieldName) {
+            HashSet<string> listFields;
+            if (dynamicPortListFields == null || !dynamicPortListFields.TryGetValue(nodeType, out listFields)) return false;
 
-            FieldInfo backingPortInfo = port.node.GetType().GetField(fieldNameParts[0]);
-            if (backingPortInfo == null) return false;
-
-            object[] attribs = backingPortInfo.GetCustomAttributes(true);
-            return attribs.Any(x => {
-                Node.InputAttribute inputAttribute = x as Node.InputAttribute;
-                Node.OutputAttribute outputAttribute = x as Node.OutputAttribute;
-                return inputAttribute != null && inputAttribute.dynamicPortList ||
-                       outputAttribute != null && outputAttribute.dynamicPortList;
-            });
+            foreach (string backing in listFields) {
+                if (fieldName.Length <= backing.Length || fieldName[backing.Length] != ' ' || !fieldName.StartsWith(backing, System.StringComparison.Ordinal)) continue;
+                // 名字以 "<backing> " 开头且尾缀为纯数字才算列表端口
+                bool valid = fieldName.Length > backing.Length + 1;
+                for (int c = backing.Length + 1; valid && c < fieldName.Length; c++) {
+                    if (fieldName[c] < '0' || fieldName[c] > '9') valid = false;
+                }
+                if (valid) return true;
+            }
+            return false;
         }
 
         /// <summary> 扫描程序集构建节点类型与端口缓存 </summary>
         private static void BuildCache() {
             portDataCache = new PortDataCache();
+            dynamicPortListFields = new Dictionary<System.Type, HashSet<string>>();
             System.Type baseType = typeof(Node);
             List<System.Type> nodeTypes = new List<System.Type>();
             System.Reflection.Assembly[] assemblies = System.AppDomain.CurrentDomain.GetAssemblies();
@@ -157,7 +214,7 @@ namespace XNode {
                     case "Microsoft":
                         continue;
                     default:
-                        nodeTypes.AddRange(assembly.GetTypes().Where(t => !t.IsAbstract && baseType.IsAssignableFrom(t)).ToArray());
+                        AddNodeTypesFromAssembly(assembly, baseType, nodeTypes);
                         break;
                 }
             }
@@ -227,6 +284,16 @@ namespace XNode {
                     if (!portDataCache.ContainsKey(nodeType)) portDataCache.Add(nodeType, new Dictionary<string, NodePort>());
                      NodePort port = new NodePort(fieldInfo[i]);
                      portDataCache[nodeType].Add(port.fieldName, port);
+
+                     // 记录动态列表字段，UpdatePorts 快路径据此零反射判定列表端口
+                     if (inputAttrib != null && inputAttrib.dynamicPortList || outputAttrib != null && outputAttrib.dynamicPortList) {
+                         HashSet<string> fields;
+                         if (!dynamicPortListFields.TryGetValue(nodeType, out fields)) {
+                             fields = new HashSet<string>();
+                             dynamicPortListFields.Add(nodeType, fields);
+                         }
+                         fields.Add(port.fieldName);
+                     }
                 }
 
                 if (formerlySerializedAsAttribute != null) {

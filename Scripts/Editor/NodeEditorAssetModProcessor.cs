@@ -31,12 +31,10 @@ namespace XNodeEditor {
                 Object[] objs = AssetDatabase.LoadAllAssetRepresentationsAtPath (assetpath);
                 for (int k = 0; k < objs.Length; k++) {
                     XNode.Node node = objs[k] as XNode.Node;
-                    if (node.GetType () == scriptType) {
-                        if (node != null && node.graph != null) {
-                            // Delete the node and notify the user
-                            Debug.LogWarning (node.name + " of " + node.graph + " depended on deleted script and has been removed automatically.", node.graph);
-                            node.graph.RemoveNode (node);
-                        }
+                    if (node != null && node.GetType () == scriptType && node.graph != null) {
+                        // 删除节点并通知用户
+                        Debug.LogWarning (node.name + " of " + node.graph + " depended on deleted script and has been removed automatically.", node.graph);
+                        node.graph.RemoveNode (node);
                     }
                 }
             }
