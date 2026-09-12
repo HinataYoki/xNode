@@ -395,11 +395,12 @@ namespace XNode {
 #if UNITY_2021_3_OR_NEWER
                 this.EnsureCapacity(keys.Count);
 #endif
-
-                if (keys.Count != values.Count)
-                    throw new System.Exception("there are " + keys.Count + " keys and " + values.Count + " values after deserialization. Make sure that both key and value types are serializable.");
-
-                for (int i = 0; i < keys.Count; i++)
+                // 键值数量不一致说明资产数据已损坏：记录错误并按较短一侧截断加载，保留可配对部分
+                if (keys.Count != values.Count) {
+                    Debug.LogError("端口字典反序列化后键值数量不一致（" + keys.Count + " 个键 / " + values.Count + " 个值），已按较短一侧截断加载。请确认键值类型均可序列化。");
+                }
+                int count = Math.Min(keys.Count, values.Count);
+                for (int i = 0; i < count; i++)
                     this.Add(keys[i], values[i]);
             }
         }

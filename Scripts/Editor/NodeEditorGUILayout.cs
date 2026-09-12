@@ -459,10 +459,8 @@ namespace XNodeEditor {
 
                     int index = rl.index;
 
-                    if (dynamicPorts[index] == null) {
-                        Debug.LogWarning("No port found at index " + index + " - Skipped");
-                    } else if (dynamicPorts.Count <= index) {
-                        Debug.LogWarning("DynamicPorts[" + index + "] out of range. Length was " + dynamicPorts.Count + " - Skipped");
+                    if (dynamicPorts.Count <= index || dynamicPorts[index] == null) {
+                        Debug.LogWarning("动态端口索引 " + index + " 无效，已跳过移除");
                     } else {
                         // 清空被移除端口的连接
                         dynamicPorts[index].ClearConnections();
@@ -482,8 +480,7 @@ namespace XNodeEditor {
 
                     if (hasArrayData && arrayData.propertyType != SerializedPropertyType.String) {
                         if (arrayData.arraySize <= index) {
-                            Debug.LogWarning("Attempted to remove array index " + index + " where only " + arrayData.arraySize + " exist - Skipped");
-                            Debug.Log(rl.list[0]);
+                            Debug.LogWarning("尝试移除数组索引 " + index + "，但只有 " + arrayData.arraySize + " 个元素，已跳过");
                             return;
                         }
                         arrayData.DeleteArrayElementAtIndex(index);

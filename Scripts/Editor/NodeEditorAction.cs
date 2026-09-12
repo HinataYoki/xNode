@@ -245,9 +245,11 @@ namespace XNodeEditor {
                             draggedOutputTarget = null;
                             EditorUtility.SetDirty(graph);
                             if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
-                        } else if (currentActivity == NodeActivity.DragNode) {
-                            IEnumerable<XNode.Node> nodes = Selection.objects.Where(x => x is XNode.Node).Select(x => x as XNode.Node);
-                            foreach (XNode.Node node in nodes) EditorUtility.SetDirty(node);
+                        } else if (_activity == NodeActivity.DragNode) {
+                            // 拖动节点结束：标脏并按需自动保存
+                            for (int i = 0; i < Selection.objects.Length; i++) {
+                                if (Selection.objects[i] is XNode.Node) EditorUtility.SetDirty(Selection.objects[i]);
+                            }
                             if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
                         } else if (!IsHoveringNode) {
                             // If click outside node, release field focus

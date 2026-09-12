@@ -124,11 +124,27 @@ namespace XNode {
             }
         }
 
-        /// <summary> Return the output value of this node through its parent nodes GetValue override method. </summary>
-        /// <returns> <see cref="Node.GetValue(NodePort)"/> </returns>
+        // 求值递归深度与环告警状态；跨图共享，靠 try/finally 保证深度归零复位
+        private static int getValueDepth;
+        private static bool getValueCycleWarned;
+
+        /// <summary> 调用所属节点的 GetValue 求输出值；带深度保护，端口连成环时截断并告警，避免栈溢出 </summary>
         public object GetOutputValue() {
             if (direction == IO.Input) return null;
-            return node.GetValue(this);
+            if (getValueDepth >= 512) {
+                if (!getValueCycleWarned) {
+                    getValueCycleWarned = true;
+                    Debug.LogWarning("xNode: 节点求值深度超过 512，疑似存在循环连接，已截断求值。请检查节点 \"" + node.name + "\" 所在图的环。");
+                }
+                return null;
+            }
+            getValueDepth++;
+            try {
+                return node.GetValue(this);
+            } finally {
+                getValueDepth--;
+                if (getValueDepth == 0) getValueCycleWarned = false;
+            }
         }
 
         /// <summary> 取第一个连接端口的输出值；无连接或连接失效时返回 null </summary>
@@ -140,15 +156,21 @@ namespace XNode {
 
         /// <summary> 取所有连接端口的输出值；顺带剔除失效连接 </summary>
         public object[] GetInputValues() {
-            object[] objs = new object[ConnectionCount];
-            for (int i = 0; i < ConnectionCount; i++) {
+            object[] objs = new object[connections.Count];
+            int valueCount = 0;
+            for (int i = 0; i < connections.Count; i++) {
                 NodePort connectedPort = connections[i].Port;
                 if (connectedPort == null) {
                     connections.RemoveAt(i);
                     i--;
                     continue;
                 }
-                objs[i] = connectedPort.GetOutputValue();
+                objs[valueCount++] = connectedPort.GetOutputValue();
+            }
+            if (valueCount != objs.Length) {
+                object[] validObjs = new object[valueCount];
+                Array.Copy(objs, validObjs, valueCount);
+                return validObjs;
             }
             return objs;
         }
@@ -226,25 +248,24 @@ namespace XNode {
 
         /// <summary> 取所有有效连接的对端端口列表；顺带剔除失效连接 </summary>
         public List<NodePort> GetConnections() {
-            List<NodePort> result = new List<NodePort>();
+            List<NodePort> result = new List<NodePort>(connections.Count);
             for (int i = 0; i < connections.Count; i++) {
                 NodePort port = GetConnection(i);
                 if (port != null) result.Add(port);
+                else i--; // GetConnection 内部删除了失效条目，回退索引补位
             }
             return result;
         }
 
         /// <summary> 取第 i 个连接的对端端口；发现失效连接时顺带清理 </summary>
         public NodePort GetConnection(int i) {
-            //If the connection is broken for some reason, remove it.
-            if (connections[i].node == null || string.IsNullOrEmpty(connections[i].fieldName)) {
+            if (connections[i].node == null) {
                 connections.RemoveAt(i);
                 return null;
             }
-            NodePort port = connections[i].node.GetPort(connections[i].fieldName);
+            NodePort port = connections[i].Port; // Port 属性带解析缓存，避免重复按字段名查表
             if (port == null) {
                 connections.RemoveAt(i);
-                return null;
             }
             return port;
         }
@@ -307,14 +328,9 @@ namespace XNode {
                 }
             }
             if (port != null) {
-                // Remove the other ports connection to this port
-                for (int i = 0; i < port.connections.Count; i++) {
-                    if (port.connections[i].Port == this) {
-                        port.connections.RemoveAt(i);
-                        // Trigger OnRemoveConnection from this side port
-                        port.node.OnRemoveConnection(port);
-                    }
-                }
+                // 移除对方指回本端的连接并触发其回调
+                port.connections.RemoveAll(it => it.Port == this);
+                port.node.OnRemoveConnection(port);
             }
             node.OnRemoveConnection(this);
         }
@@ -322,13 +338,12 @@ namespace XNode {
         /// <summary> 按索引断开一条连接，双向同步移除并触发两侧回调 </summary>
         public void Disconnect(int i) {
             NodePort otherPort = connections[i].Port;
-            if (otherPort != null) {
-                otherPort.connections.RemoveAll(it => { return it.Port == this; });
-            }
-            // Remove this ports connection to the other
             connections.RemoveAt(i);
             node.OnRemoveConnection(this);
-            if (otherPort != null) otherPort.node.OnRemoveConnection(otherPort);
+            if (otherPort != null) {
+                otherPort.connections.RemoveAll(it => it.Port == this);
+                otherPort.node.OnRemoveConnection(otherPort);
+            }
         }
 
         /// <summary> 断开本端口全部连接 </summary>
@@ -381,7 +396,7 @@ namespace XNode {
 
         /// <summary> 把本端口的全部连接迁移到目标端口；先断开再逐个重连，避免遍历中改双向连接导致漏移 </summary>
         public void MoveConnections(NodePort targetPort) {
-            int connectionCount = connections.Count;
+            if (targetPort == null) throw new ArgumentNullException("targetPort");
 
             // Add connections to target port
             for (int i = 0; i < connectionCount; i++) {

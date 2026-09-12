@@ -167,6 +167,26 @@ namespace XNode {
             }
         }
 
+        /// <summary> 收集单个程序集里的全部非抽象 Node 子类；程序集部分类型加载失败时降级使用可加载部分 </summary>
+        private static void AddNodeTypesFromAssembly(Assembly assembly, System.Type baseType, List<System.Type> nodeTypes) {
+            System.Type[] types;
+            try {
+                types = assembly.GetTypes();
+            } catch (ReflectionTypeLoadException ex) {
+                types = ex.Types;
+            } catch (System.Exception ex) {
+                Debug.LogWarning("xNode 缓存端口时跳过程序集 '" + assembly.GetName().Name + "'：" + ex.Message);
+                return;
+            }
+
+            // 大工程里部分程序集可能只能加载部分类型，跳过空项保证其它节点类型仍能进入缓存
+            for (int i = 0; i < types.Length; i++) {
+                System.Type type = types[i];
+                if (type != null && !type.IsAbstract && baseType.IsAssignableFrom(type)) nodeTypes.Add(type);
+            }
+        }
+
+        /// <summary> 取节点类型的全部序列化字段，含基类私有字段（GetFields 不返回继承的私有字段） </summary>
         public static List<FieldInfo> GetNodeFields(System.Type nodeType) {
             List<System.Reflection.FieldInfo> fieldInfo = new List<System.Reflection.FieldInfo>(nodeType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
 
@@ -202,7 +222,7 @@ namespace XNode {
 
                 if (inputAttrib == null && outputAttrib == null) continue;
 
-                if (inputAttrib != null && outputAttrib != null) Debug.LogError("Field " + fieldInfo[i].Name + " of type " + nodeType.FullName + " cannot be both input and output.");
+                if (inputAttrib != null && outputAttrib != null) Debug.LogError("类型 " + nodeType.FullName + " 的字段 " + fieldInfo[i].Name + " 不能同时作为输入和输出。");
                 else {
                     if (!portDataCache.ContainsKey(nodeType)) portDataCache.Add(nodeType, new Dictionary<string, NodePort>());
                      NodePort port = new NodePort(fieldInfo[i]);

@@ -72,14 +72,30 @@ namespace XNodeEditor {
             List<System.Type> types = new List<System.Type>();
             System.Reflection.Assembly[] assemblies = System.AppDomain.CurrentDomain.GetAssemblies();
             foreach (Assembly assembly in assemblies) {
-                try {
-                    types.AddRange(assembly.GetTypes().Where(t => !t.IsAbstract && baseType.IsAssignableFrom(t)).ToArray());
-                } catch (ReflectionTypeLoadException) { }
+                AddDerivedTypesFromAssembly(assembly, baseType, types);
             }
             return types.ToArray();
         }
 
-        /// <summary> Find methods marked with the [ContextMenu] attribute and add them to the context menu </summary>
+        /// <summary> 收集单个程序集里的全部非抽象基类派生类型；部分类型加载失败时降级使用可加载部分 </summary>
+        private static void AddDerivedTypesFromAssembly(Assembly assembly, Type baseType, List<Type> types) {
+            Type[] assemblyTypes;
+            try {
+                assemblyTypes = assembly.GetTypes();
+            } catch (ReflectionTypeLoadException ex) {
+                assemblyTypes = ex.Types;
+            } catch {
+                return;
+            }
+
+            // 允许程序集部分类型加载失败，避免右键菜单/编辑器缓存被单个异常程序集拖垮。
+            for (int i = 0; i < assemblyTypes.Length; i++) {
+                Type type = assemblyTypes[i];
+                if (type != null && !type.IsAbstract && baseType.IsAssignableFrom(type)) types.Add(type);
+            }
+        }
+
+        /// <summary> 找出标了 [ContextMenu] 的方法并加入右键菜单 </summary>
         public static void AddCustomContextMenuItems(this GenericMenu contextMenu, object obj) {
             KeyValuePair<ContextMenu, MethodInfo>[] items = GetContextMenuMethods(obj);
             if (items.Length != 0) {

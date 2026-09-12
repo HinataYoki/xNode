@@ -52,14 +52,21 @@ namespace XNodeEditor {
             for (int i = 0; i < guids.Length; i++) {
                 string assetpath = AssetDatabase.GUIDToAssetPath (guids[i]);
                 XNode.NodeGraph graph = AssetDatabase.LoadAssetAtPath (assetpath, typeof (XNode.NodeGraph)) as XNode.NodeGraph;
-                graph.nodes.RemoveAll(x => x == null); //Remove null items
+                if (graph == null) continue;
+
+                bool changed = graph.nodes.RemoveAll(x => x == null) > 0; // 移除空项
                 Object[] objs = AssetDatabase.LoadAllAssetRepresentationsAtPath (assetpath);
                 // 确保全部节点子资产都在图的节点列表里
                 for (int u = 0; u < objs.Length; u++) {
-                    // Ignore null sub assets
-                    if (objs[u] == null) continue;
-                    if (!graph.nodes.Contains (objs[u] as XNode.Node)) graph.nodes.Add(objs[u] as XNode.Node);
+                    // 忽略 null 子资产
+                    XNode.Node node = objs[u] as XNode.Node;
+                    if (node == null) continue;
+                    if (!graph.nodes.Contains (node)) {
+                        graph.nodes.Add(node);
+                        changed = true;
+                    }
                 }
+                if (changed) EditorUtility.SetDirty(graph);
             }
         }
     }
