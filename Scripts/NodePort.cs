@@ -274,21 +274,31 @@ namespace XNode {
             if (port.IsInput) input = port;
             else output = port;
             if (input == null || output == null) return false;
-            // Check input type constraints
-            if (input.typeConstraint == XNode.Node.TypeConstraint.Inherited && !input.ValueType.IsAssignableFrom(output.ValueType)) return false;
-            if (input.typeConstraint == XNode.Node.TypeConstraint.Strict && input.ValueType != output.ValueType) return false;
-            if (input.typeConstraint == XNode.Node.TypeConstraint.InheritedInverse && !output.ValueType.IsAssignableFrom(input.ValueType)) return false;
-            if (input.typeConstraint == XNode.Node.TypeConstraint.InheritedAny && !input.ValueType.IsAssignableFrom(output.ValueType) && !output.ValueType.IsAssignableFrom(input.ValueType)) return false;
-            // Check output type constraints
-            if (output.typeConstraint == XNode.Node.TypeConstraint.Inherited && !input.ValueType.IsAssignableFrom(output.ValueType)) return false;
-            if (output.typeConstraint == XNode.Node.TypeConstraint.Strict && input.ValueType != output.ValueType) return false;
-            if (output.typeConstraint == XNode.Node.TypeConstraint.InheritedInverse && !output.ValueType.IsAssignableFrom(input.ValueType)) return false;
-            if (output.typeConstraint == XNode.Node.TypeConstraint.InheritedAny && !input.ValueType.IsAssignableFrom(output.ValueType) && !output.ValueType.IsAssignableFrom(input.ValueType)) return false;
-            // Success
-            return true;
+            // 输入、输出两侧的约束作用于同一对 (输入类型, 输出类型)，都需满足
+            return MatchesConstraint(input.typeConstraint, input.ValueType, output.ValueType)
+                && MatchesConstraint(output.typeConstraint, input.ValueType, output.ValueType);
         }
 
-        /// <summary> Disconnect this port from another port </summary>
+        /// <summary>
+        /// 校验一对 (输入类型, 输出类型) 是否满足指定约束；None 恒通过。
+        /// 端口连接校验与编辑器创建菜单的兼容性过滤共用此实现，避免两处语义漂移。
+        /// </summary>
+        public static bool MatchesConstraint(Node.TypeConstraint constraint, Type inputType, Type outputType) {
+            switch (constraint) {
+                case Node.TypeConstraint.Inherited:
+                    return inputType.IsAssignableFrom(outputType);
+                case Node.TypeConstraint.Strict:
+                    return inputType == outputType;
+                case Node.TypeConstraint.InheritedInverse:
+                    return outputType.IsAssignableFrom(inputType);
+                case Node.TypeConstraint.InheritedAny:
+                    return inputType.IsAssignableFrom(outputType) || outputType.IsAssignableFrom(inputType);
+                default:
+                    return true;
+            }
+        }
+
+        /// <summary> 断开与指定端口的全部连接，双向同步移除并触发两侧回调 </summary>
         public void Disconnect(NodePort port) {
             // 移除本端指向对方的连接
             for (int i = connections.Count - 1; i >= 0; i--) {

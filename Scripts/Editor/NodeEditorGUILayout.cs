@@ -287,20 +287,7 @@ namespace XNodeEditor {
             GUI.color = col;
         }
 
-
-        #region Obsolete
-        [Obsolete("Use IsDynamicPortListPort instead")]
-        public static bool IsInstancePortListPort(XNode.NodePort port) {
-            return IsDynamicPortListPort(port);
-        }
-
-        [Obsolete("Use DynamicPortList instead")]
-        public static void InstancePortList(string fieldName, Type type, SerializedObject serializedObject, XNode.NodePort.IO io, XNode.Node.ConnectionType connectionType = XNode.Node.ConnectionType.Multiple, XNode.Node.TypeConstraint typeConstraint = XNode.Node.TypeConstraint.None, Action<ReorderableList> onCreation = null) {
-            DynamicPortList(fieldName, type, serializedObject, io, connectionType, typeConstraint, onCreation);
-        }
-        #endregion
-
-        /// <summary> Is this port part of a DynamicPortList? </summary>
+        /// <summary> 该端口是否属于某个动态端口列表；对列表键做前缀匹配，零字符串分配 </summary>
         public static bool IsDynamicPortListPort(XNode.NodePort port) {
             string[] parts = port.fieldName.Split(' ');
             if (parts.Length != 2) return false;

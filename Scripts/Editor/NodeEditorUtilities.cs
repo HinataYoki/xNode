@@ -134,8 +134,8 @@ namespace XNodeEditor {
         /// <param name="nodeType">要搜索的节点类型</param>
         /// <param name="compatibleType">要匹配的兼容类型</param>
         /// <param name="direction"></param>
-        /// <returns>True if NodeType has some port with value type compatible</returns>
-        public static bool HasCompatiblePortType(Type nodeType, Type compatibleType, XNode.NodePort.IO direction = XNode.NodePort.IO.Input) {
+        /// <returns>节点类型上存在值类型兼容的端口时返回 true</returns>
+        public static bool HasCompatiblePortType(Type nodeType, Type compatibleType, XNode.Node.TypeConstraint fromConstraint, XNode.NodePort.IO direction = XNode.NodePort.IO.Input) {
             Type findType = typeof(XNode.Node.InputAttribute);
             if (direction == XNode.NodePort.IO.Output)
                 findType = typeof(XNode.Node.OutputAttribute);
@@ -157,11 +157,11 @@ namespace XNodeEditor {
         /// <summary>
         /// 只保留端口值类型与指定类型兼容的节点类型。
         /// </summary>
-        /// <param name="nodeTypes">List with all nodes type to filter</param>
-        /// <param name="compatibleType">Compatible Type to Filter</param>
-        /// <returns>Return Only Node Types with ports compatible, or an empty list</returns>
-        public static List<Type> GetCompatibleNodesTypes(Type[] nodeTypes, Type compatibleType, XNode.NodePort.IO direction = XNode.NodePort.IO.Input) {
-            //Result List
+        /// <param name="nodeTypes">待过滤的全部节点类型</param>
+        /// <param name="compatibleType">用于过滤的兼容类型</param>
+        /// <returns>端口类型兼容的节点类型列表，无匹配时为空列表</returns>
+        public static List<Type> GetCompatibleNodesTypes(Type[] nodeTypes, Type compatibleType, XNode.Node.TypeConstraint typeConstraint, XNode.NodePort.IO direction = XNode.NodePort.IO.Input) {
+            // 结果列表
             List<Type> filteredTypes = new List<Type>();
 
             // 参数无效时返回空列表
@@ -170,7 +170,7 @@ namespace XNodeEditor {
 
             // 逐个类型检查兼容性
             foreach (Type findType in nodeTypes) {
-                if (HasCompatiblePortType(findType, compatibleType, direction)) {
+                if (HasCompatiblePortType(findType, compatibleType, typeConstraint, direction)) {
                     filteredTypes.Add(findType);
                 }
             }

@@ -54,44 +54,41 @@ namespace XNode {
             InheritedAny
         }
 
-#region Obsolete
-        [Obsolete("Use DynamicPorts instead")]
-        public IEnumerable<NodePort> InstancePorts { get { return DynamicPorts; } }
+        /// <summary> 遍历节点上的全部端口 </summary>
+        public IEnumerable<NodePort> Ports { get { foreach (NodePort port in ports.Values) yield return port; } }
+        /// <summary> 遍历全部输出端口 </summary>
+        public IEnumerable<NodePort> Outputs { get { foreach (NodePort port in Ports) { if (port.IsOutput) yield return port; } } }
+        /// <summary> 遍历全部输入端口 </summary>
+        public IEnumerable<NodePort> Inputs { get { foreach (NodePort port in Ports) { if (port.IsInput) yield return port; } } }
+        /// <summary> 遍历全部动态端口 </summary>
+        public IEnumerable<NodePort> DynamicPorts { get { foreach (NodePort port in Ports) { if (port.IsDynamic) yield return port; } } }
+        /// <summary> 遍历全部动态输出端口 </summary>
+        public IEnumerable<NodePort> DynamicOutputs { get { foreach (NodePort port in Ports) { if (port.IsDynamic && port.IsOutput) yield return port; } } }
+        /// <summary> 遍历全部动态输入端口 </summary>
+        public IEnumerable<NodePort> DynamicInputs { get { foreach (NodePort port in Ports) { if (port.IsDynamic && port.IsInput) yield return port; } } }
 
-        [Obsolete("Use DynamicOutputs instead")]
-        public IEnumerable<NodePort> InstanceOutputs { get { return DynamicOutputs; } }
-
-        [Obsolete("Use DynamicInputs instead")]
-        public IEnumerable<NodePort> InstanceInputs { get { return DynamicInputs; } }
-
-        [Obsolete("Use AddDynamicInput instead")]
-        public NodePort AddInstanceInput(Type type, Node.ConnectionType connectionType = Node.ConnectionType.Multiple, Node.TypeConstraint typeConstraint = TypeConstraint.None, string fieldName = null) {
-            return AddDynamicInput(type, connectionType, typeConstraint, fieldName);
+        /// <summary> 把全部端口填入 results（先清空）；供编辑器每帧路径复用列表，避免迭代器分配 </summary>
+        public void GetPorts(List<NodePort> results) {
+            results.Clear();
+            foreach (KeyValuePair<string, NodePort> pair in ports) results.Add(pair.Value);
         }
 
-        [Obsolete("Use AddDynamicOutput instead")]
-        public NodePort AddInstanceOutput(Type type, Node.ConnectionType connectionType = Node.ConnectionType.Multiple, Node.TypeConstraint typeConstraint = TypeConstraint.None, string fieldName = null) {
-            return AddDynamicOutput(type, connectionType, typeConstraint, fieldName);
+        /// <summary> 把全部输入端口填入 results（先清空） </summary>
+        public void GetInputs(List<NodePort> results) {
+            results.Clear();
+            foreach (KeyValuePair<string, NodePort> pair in ports) if (pair.Value.IsInput) results.Add(pair.Value);
         }
 
-        [Obsolete("Use AddDynamicPort instead")]
-        private NodePort AddInstancePort(Type type, NodePort.IO direction, Node.ConnectionType connectionType = Node.ConnectionType.Multiple, Node.TypeConstraint typeConstraint = TypeConstraint.None, string fieldName = null) {
-            return AddDynamicPort(type, direction, connectionType, typeConstraint, fieldName);
+        /// <summary> 把全部输出端口填入 results（先清空） </summary>
+        public void GetOutputs(List<NodePort> results) {
+            results.Clear();
+            foreach (KeyValuePair<string, NodePort> pair in ports) if (pair.Value.IsOutput) results.Add(pair.Value);
         }
 
-        [Obsolete("Use RemoveDynamicPort instead")]
-        public void RemoveInstancePort(string fieldName) {
-            RemoveDynamicPort(fieldName);
-        }
-
-        [Obsolete("Use RemoveDynamicPort instead")]
-        public void RemoveInstancePort(NodePort port) {
-            RemoveDynamicPort(port);
-        }
-
-        [Obsolete("Use ClearDynamicPorts instead")]
-        public void ClearInstancePorts() {
-            ClearDynamicPorts();
+        /// <summary> 把全部动态端口填入 results（先清空） </summary>
+        public void GetDynamicPorts(List<NodePort> results) {
+            results.Clear();
+            foreach (KeyValuePair<string, NodePort> pair in ports) if (pair.Value.IsDynamic) results.Add(pair.Value);
         }
 #endregion
 
@@ -266,8 +263,6 @@ namespace XNode {
         public class InputAttribute : Attribute {
             public ShowBackingValue backingValue;
             public ConnectionType connectionType;
-            [Obsolete("Use dynamicPortList instead")]
-            public bool instancePortList { get { return dynamicPortList; } set { dynamicPortList = value; } }
             public bool dynamicPortList;
             public TypeConstraint typeConstraint;
 
@@ -289,8 +284,6 @@ namespace XNode {
         public class OutputAttribute : Attribute {
             public ShowBackingValue backingValue;
             public ConnectionType connectionType;
-            [Obsolete("Use dynamicPortList instead")]
-            public bool instancePortList { get { return dynamicPortList; } set { dynamicPortList = value; } }
             public bool dynamicPortList;
             public TypeConstraint typeConstraint;
 

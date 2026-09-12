@@ -27,10 +27,7 @@ namespace XNodeEditor {
             [SerializeField] private Color32 _gridBgColor = new Color(.19f, .19f, .19f);
             public Color32 gridBgColor { get { return _gridBgColor; } set { _gridBgColor = value; _gridTexture = null; } }
 
-            [Obsolete("Use maxZoom instead")]
-            public float zoomOutLimit { get { return maxZoom; } set { maxZoom = value; } }
-
-            [UnityEngine.Serialization.FormerlySerializedAs("zoomOutLimit")]
+            [FormerlySerializedAs("zoomOutLimit")]
             public float maxZoom = 5f;
             public float minZoom = 1f;
             /// <summary> 节点默认着色；节点类型未标 [NodeTint] 时使用 </summary>

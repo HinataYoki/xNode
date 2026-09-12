@@ -74,15 +74,15 @@ namespace XNodeEditor {
         /// 可重写此方法以添加自定义菜单项。
         /// </summary>
         /// <param name="menu"></param>
-        /// <param name="compatibleType">Use it to filter only nodes with ports value type, compatible with this type</param>
-        /// <param name="direction">Direction of the compatiblity</param>
-        public virtual void AddContextMenuItems(GenericMenu menu, Type compatibleType = null, XNode.NodePort.IO direction = XNode.NodePort.IO.Input) {
+        /// <param name="compatibleType">用于筛选端口值类型与该类型兼容的节点</param>
+        /// <param name="direction">兼容性的方向</param>
+        public virtual void AddContextMenuItems(GenericMenu menu, XNode.NodePort nodePort = null, XNode.NodePort.IO direction = XNode.NodePort.IO.Input) {
             Vector2 pos = NodeEditorWindow.current.WindowToGridPosition(Event.current.mousePosition);
-
+            Type compatibleType = nodePort?.ValueType;
             Type[] nodeTypes;
 
             if (compatibleType != null && NodeEditorPreferences.GetSettings().createFilter) {
-                nodeTypes = NodeEditorUtilities.GetCompatibleNodesTypes(NodeEditorReflection.nodeTypes, compatibleType, direction).OrderBy(GetNodeMenuOrder).ToArray();
+                nodeTypes = NodeEditorUtilities.GetCompatibleNodesTypes(NodeEditorReflection.nodeTypes, compatibleType, nodePort.typeConstraint, direction).OrderBy(GetNodeMenuOrder).ToArray();
             } else {
                 nodeTypes = NodeEditorReflection.nodeTypes.OrderBy(GetNodeMenuOrder).ToArray();
             }
