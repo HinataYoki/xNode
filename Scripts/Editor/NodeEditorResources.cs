@@ -22,7 +22,8 @@ namespace XNodeEditor {
         public class Styles {
             public GUIStyle inputPort, outputPort, nodeHeader, nodeBody, tooltip, nodeHighlight;
 
-            public Styles() {
+            /// <summary> 构建输入/输出端口、节点标题/主体/高亮、提示框的全部 GUIStyle </summary>
+        public Styles() {
                 GUIStyle baseStyle = new GUIStyle("Label");
                 baseStyle.fixedHeight = 18;
 

@@ -370,8 +370,8 @@ namespace XNodeEditor {
                         NoodlePath noodlePath = graphEditor.GetNoodlePath(output, input);
                         NoodleStroke noodleStroke = graphEditor.GetNoodleStroke(output, input);
 
-                        // Error handling
-                        if (input == null) continue; //If a script has been updated and the port doesn't exist, it is removed and null is returned. If this happens, return.
+                        // 错误处理：脚本更新后端口可能已不存在（此时已从连接表移除并返回 null）
+                        if (input == null) continue;
                         if (!input.IsConnectedTo(output)) input.Connect(output);
                         Rect toRect;
                         if (!_portConnectionPoints.TryGetValue(input, out toRect)) continue;

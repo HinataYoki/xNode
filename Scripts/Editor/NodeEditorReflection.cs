@@ -181,7 +181,7 @@ namespace XNodeEditor {
 #endif
             } catch (Exception e) {
                 Debug.LogError(e);
-                Debug.LogWarning("Unity has changed around internally. Can't open properties through reflection. Please contact xNode developer and supply unity version number.");
+                Debug.LogWarning("Unity 内部结构已变更，无法通过反射打开偏好设置。请向 xNode 开发者反馈并附上 Unity 版本号。");
             }
         }
     }

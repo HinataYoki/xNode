@@ -163,7 +163,7 @@ namespace XNode {
                 int i = 0;
                 while (HasPort(fieldName)) fieldName = "dynamicInput_" + (++i);
             } else if (HasPort(fieldName)) {
-                Debug.LogWarning("Port '" + fieldName + "' already exists in " + name, this);
+                Debug.LogWarning("端口 '" + fieldName + "' 已存在于 " + name, this);
                 return ports[fieldName];
             }
             NodePort port = new NodePort(fieldName, type, direction, connectionType, typeConstraint, this);
@@ -181,7 +181,7 @@ namespace XNode {
         /// <summary> 移除动态端口；静态端口不可移除 </summary>
         public void RemoveDynamicPort(NodePort port) {
             if (port == null) throw new ArgumentNullException("port");
-            else if (port.IsStatic) throw new ArgumentException("cannot remove static port");
+            else if (port.IsStatic) throw new ArgumentException("不能移除静态端口");
             port.ClearConnections();
             ports.Remove(port.fieldName);
         }

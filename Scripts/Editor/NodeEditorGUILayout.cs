@@ -505,7 +505,7 @@ namespace XNodeEditor {
                             while (dynamicPorts.Count <= arrayData.arraySize) {
                                 arrayData.DeleteArrayElementAtIndex(arrayData.arraySize - 1);
                             }
-                            UnityEngine.Debug.LogWarning("Array size exceeded dynamic ports size. Excess items removed.");
+                            UnityEngine.Debug.LogWarning("数组长度超过动态端口数量，已移除多余元素");
                         }
                         serializedObject.ApplyModifiedProperties();
                         serializedObject.Update();

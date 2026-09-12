@@ -46,9 +46,9 @@ namespace XNodeEditor {
         public virtual string GetNodeMenuName(Type type) {
             //检查类型是否带有 CreateNodeMenuAttribute
             XNode.Node.CreateNodeMenuAttribute attrib;
-            if (NodeEditorUtilities.GetAttrib(type, out attrib)) // Return custom path
+            if (NodeEditorUtilities.GetAttrib(type, out attrib)) // 返回自定义路径
                 return attrib.menuName;
-            else // Return generated path
+            else // 返回自动生成的路径
                 return NodeEditorUtilities.NodeDefaultPath(type);
         }
 
@@ -56,7 +56,7 @@ namespace XNodeEditor {
         public virtual int GetNodeMenuOrder(Type type) {
             //检查类型是否带有 CreateNodeMenuAttribute
             XNode.Node.CreateNodeMenuAttribute attrib;
-            if (NodeEditorUtilities.GetAttrib(type, out attrib)) // Return custom path
+            if (NodeEditorUtilities.GetAttrib(type, out attrib)) // 返回自定义路径
                 return attrib.order;
             else
                 return 0;
@@ -106,7 +106,7 @@ namespace XNodeEditor {
                 if (disallowed) menu.AddItem(new GUIContent(path), false, null);
                 else menu.AddItem(new GUIContent(path), false, () => {
                     XNode.Node node = CreateNode(type, pos);
-                    if (node != null) NodeEditorWindow.current.AutoConnect(node); // handle null nodes to avoid nullref exceptions
+                    if (node != null) NodeEditorWindow.current.AutoConnect(node); //处理空节点以避免空引用异常
                 });
             }
             menu.AddSeparator("");
@@ -218,7 +218,7 @@ namespace XNodeEditor {
         public virtual XNode.Node CreateNode(Type type, Vector2 position) {
             Undo.RecordObject(target, "Create Node");
             XNode.Node node = target.AddNode(type);
-            if (node == null) return null; // handle null nodes to avoid nullref exceptions
+            if (node == null) return null; //处理空节点以避免空引用异常
             Undo.RegisterCreatedObjectUndo(node, "Create Node");
             node.position = position;
             if (node.name == null || node.name.Trim() == "") node.name = NodeEditorUtilities.NodeDefaultName(type);

@@ -143,7 +143,7 @@ namespace XNode {
             object[] objs = new object[ConnectionCount];
             for (int i = 0; i < ConnectionCount; i++) {
                 NodePort connectedPort = connections[i].Port;
-                if (connectedPort == null) { // if we happen to find a null port, remove it and look again
+                if (connectedPort == null) {
                     connections.RemoveAt(i);
                     i--;
                     continue;
@@ -206,10 +206,10 @@ namespace XNode {
         /// <summary> 连接本端口与指定端口；自动处理 Override 语义、编辑器撤销，并触发两侧回调 </summary>
         public void Connect(NodePort port) {
             if (connections == null) connections = new List<PortConnection>();
-            if (port == null) { Debug.LogWarning("Cannot connect to null port"); return; }
-            if (port == this) { Debug.LogWarning("Cannot connect port to self."); return; }
-            if (IsConnectedTo(port)) { Debug.LogWarning("Port already connected. "); return; }
-            if (direction == port.direction) { Debug.LogWarning("Cannot connect two " + (direction == IO.Input ? "input" : "output") + " connections"); return; }
+            if (port == null) { Debug.LogWarning("不能连接到空端口"); return; }
+            if (port == this) { Debug.LogWarning("端口不能连接自身"); return; }
+            if (IsConnectedTo(port)) { Debug.LogWarning("端口已连接"); return; }
+            if (direction == port.direction) { Debug.LogWarning("不能连接两个同为" + (direction == IO.Input ? "输入" : "输出") + "的端口"); return; }
 #if UNITY_EDITOR
             UnityEditor.Undo.RecordObject(node, "Connect Port");
             UnityEditor.Undo.RecordObject(port.node, "Connect Port");

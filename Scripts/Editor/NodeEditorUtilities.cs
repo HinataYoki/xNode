@@ -104,7 +104,7 @@ namespace XNodeEditor {
             if (!typeFields.TryGetValue(fieldName, out typeAttributes)) {
                 FieldInfo field = classType.GetFieldInfo(fieldName);
                 object[] attribs = field.GetCustomAttributes(typeof(PropertyAttribute), true);
-                typeAttributes = attribs.Cast<PropertyAttribute>().Reverse().ToList(); //Unity draws them in reverse
+                typeAttributes = attribs.Cast<PropertyAttribute>().Reverse().ToList(); //Unity 按相反顺序绘制
                 typeFields.Add(fieldName, typeAttributes);
             }
 

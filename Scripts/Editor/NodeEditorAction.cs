@@ -295,7 +295,7 @@ namespace XNodeEditor {
                                 GenericMenu menu = new GenericMenu();
                                 NodeEditor.GetEditor(hoveredNode, this).AddContextMenuItems(menu);
                                 menu.DropDown(new Rect(Event.current.mousePosition, Vector2.zero));
-                                e.Use(); // Fixes copy/paste context menu appearing in Unity 5.6.6f2 - doesn't occur in 2018.3.2f1 Probably needs to be used in other places.
+                                e.Use(); // 修复 Unity 5.6.6f2 下复制/粘贴菜单弹出的问题（2018.3.2f1 已无此问题，其他位置可能也需要）
                             } else if (!IsHoveringNode) {
                                 autoConnectOutput = null;
                                 GenericMenu menu = new GenericMenu();
