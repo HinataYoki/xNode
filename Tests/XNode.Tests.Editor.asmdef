@@ -1,0 +1,16 @@
+{
+    "name": "XNode.Tests.Editor",
+    "rootNamespace": "XNodeTests",
+    "references": [
+        "XNode",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false
+}
