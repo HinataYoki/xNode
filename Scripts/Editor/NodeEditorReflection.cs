@@ -134,51 +134,15 @@ namespace XNodeEditor {
                     kvp.Add(new KeyValuePair<ContextMenu, MethodInfo>(attribs[k], methods[i]));
                 }
             }
-#if UNITY_5_5_OR_NEWER
-            //Sort menu items
+            // 按优先级排序菜单项
             kvp.Sort((x, y) => x.Key.priority.CompareTo(y.Key.priority));
-#endif
             return kvp.ToArray();
         }
 
         /// <summary> 打开 xNode 偏好设置页；内部 API 变动时会失败并提示 </summary>
         public static void OpenPreferences() {
             try {
-#if UNITY_2018_3_OR_NEWER
                 SettingsService.OpenUserPreferences("Preferences/Node Editor");
-#else
-                //Open preferences window
-                Assembly assembly = Assembly.GetAssembly(typeof(UnityEditor.EditorWindow));
-                Type type = assembly.GetType("UnityEditor.PreferencesWindow");
-                type.GetMethod("ShowPreferencesWindow", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, null);
-
-                //Get the window
-                EditorWindow window = EditorWindow.GetWindow(type);
-
-                //Make sure custom sections are added (because waiting for it to happen automatically is too slow)
-                FieldInfo refreshField = type.GetField("m_RefreshCustomPreferences", BindingFlags.NonPublic | BindingFlags.Instance);
-                if ((bool) refreshField.GetValue(window)) {
-                    type.GetMethod("AddCustomSections", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(window, null);
-                    refreshField.SetValue(window, false);
-                }
-
-                //Get sections
-                FieldInfo sectionsField = type.GetField("m_Sections", BindingFlags.Instance | BindingFlags.NonPublic);
-                IList sections = sectionsField.GetValue(window) as IList;
-
-                //Iterate through sections and check contents
-                Type sectionType = sectionsField.FieldType.GetGenericArguments() [0];
-                FieldInfo sectionContentField = sectionType.GetField("content", BindingFlags.Instance | BindingFlags.Public);
-                for (int i = 0; i < sections.Count; i++) {
-                    GUIContent sectionContent = sectionContentField.GetValue(sections[i]) as GUIContent;
-                    if (sectionContent.text == "Node Editor") {
-                        //Found contents - Set index
-                        FieldInfo sectionIndexField = type.GetField("m_SelectedSectionIndex", BindingFlags.Instance | BindingFlags.NonPublic);
-                        sectionIndexField.SetValue(window, i);
-                        return;
-                    }
-                }
-#endif
             } catch (Exception e) {
                 Debug.LogError(e);
                 Debug.LogWarning("Unity 内部结构已变更，无法通过反射打开偏好设置。请向 xNode 开发者反馈并附上 Unity 版本号。");

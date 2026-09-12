@@ -113,11 +113,7 @@ namespace XNodeEditor {
 
         /// <summary> 当前系统是否为 macOS（用于区分重命名/删除快捷键） </summary>
         public static bool IsMac() {
-#if UNITY_2017_1_OR_NEWER
             return SystemInfo.operatingSystemFamily == OperatingSystemFamily.MacOSX;
-#else
-            return SystemInfo.operatingSystem.StartsWith("Mac");
-#endif
         }
 
         /// <summary> 判断 from 类型能否赋值/转换为 to 类型 </summary>
@@ -270,6 +266,15 @@ namespace XNodeEditor {
 
         /// <summary> 启动项目窗口内置的"输入文件名"流程，按模板创建脚本；Unity 6 走 EntityId 版回调 </summary>
         public static void CreateFromTemplate(string initialName, string templatePath) {
+#if UNITY_6000_5_OR_NEWER
+            ProjectWindowUtil.StartNameEditingIfProjectWindowExists(
+                default(EntityId),
+                ScriptableObject.CreateInstance<DoCreateCodeFile>(),
+                initialName,
+                scriptIcon,
+                templatePath
+            );
+#else
             ProjectWindowUtil.StartNameEditingIfProjectWindowExists(
                 0,
                 ScriptableObject.CreateInstance<DoCreateCodeFile>(),
@@ -277,9 +282,20 @@ namespace XNodeEditor {
                 scriptIcon,
                 templatePath
             );
+#endif
         }
 
-        /// Inherits from EndNameAction, must override EndNameAction.Action
+#if UNITY_6000_5_OR_NEWER
+        /// 继承 AssetCreationEndAction，需覆写其 Action
+        public class DoCreateCodeFile : UnityEditor.ProjectWindowCallback.AssetCreationEndAction {
+            /// <summary> 用户确认文件名后执行：按模板写出脚本并选中新资产 </summary>
+            public override void Action(EntityId entityId, string pathName, string resourceFile) {
+                Object o = CreateScript(pathName, resourceFile);
+                ProjectWindowUtil.ShowCreatedAsset(o);
+            }
+        }
+#else
+        /// 继承 EndNameAction，需覆写其 Action
         public class DoCreateCodeFile : UnityEditor.ProjectWindowCallback.EndNameEditAction {
             /// <summary> 用户确认文件名后执行：按模板写出脚本并选中新资产 </summary>
             public override void Action(int instanceId, string pathName, string resourceFile) {
@@ -287,6 +303,7 @@ namespace XNodeEditor {
                 ProjectWindowUtil.ShowCreatedAsset(o);
             }
         }
+#endif
 
         /// <summary>按模板路径创建脚本。</summary>
         internal static UnityEngine.Object CreateScript(string pathName, string templatePath) {

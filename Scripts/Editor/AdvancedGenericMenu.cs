@@ -93,7 +93,12 @@ namespace XNodeEditor
             }
             else
             {
+#if UNITY_6000_5_OR_NEWER
+                // Unity 6.5 起 AdvancedDropdownItem.children 更名为 childList
+                item = currentRoot.childList.OfType<AdvancedGenericMenuItem>().FirstOrDefault( x => x.name == paths[0] );
+#else
                 item = currentRoot.children.OfType<AdvancedGenericMenuItem>().FirstOrDefault( x => x.name == paths[0] );
+#endif
                 if ( item == null )
                     currentRoot.AddChild( item = new AdvancedGenericMenuItem( paths[0] ) );
             }

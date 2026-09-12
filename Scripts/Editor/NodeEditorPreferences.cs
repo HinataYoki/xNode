@@ -117,9 +117,7 @@ namespace XNodeEditor {
         }
 #endif
 
-#if !UNITY_2019_1_OR_NEWER
-        [PreferenceItem("Node Editor")]
-#endif
+        /// <summary> 偏好设置页整体绘制：文档链接 + 各分节 + 还原默认按钮 </summary>
         private static void PreferencesGUI() {
             VerifyLoaded();
             Settings settings = NodeEditorPreferences.settings[lastKey];
@@ -246,20 +244,12 @@ namespace XNodeEditor {
                 string typeName = type.PrettyName();
                 if (settings[lastKey].typeColors.ContainsKey(typeName)) typeColors.Add(type, settings[lastKey].typeColors[typeName]);
                 else {
-#if UNITY_5_4_OR_NEWER
+                    // 保存/恢复随机状态，避免干扰其它随机逻辑
                     UnityEngine.Random.State oldState = UnityEngine.Random.state;
                     UnityEngine.Random.InitState(typeName.GetHashCode());
-#else
-                    int oldSeed = UnityEngine.Random.seed;
-                    UnityEngine.Random.seed = typeName.GetHashCode();
-#endif
                     col = new Color(UnityEngine.Random.value, UnityEngine.Random.value, UnityEngine.Random.value);
                     typeColors.Add(type, col);
-#if UNITY_5_4_OR_NEWER
                     UnityEngine.Random.state = oldState;
-#else
-                    UnityEngine.Random.seed = oldSeed;
-#endif
                 }
             }
             return col;

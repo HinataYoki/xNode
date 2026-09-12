@@ -36,20 +36,11 @@ namespace XNodeEditor {
 			string enumName = "";
 			if (property.enumValueIndex >= 0 && property.enumValueIndex < property.enumDisplayNames.Length) enumName = property.enumDisplayNames[property.enumValueIndex];
 
-#if UNITY_2017_1_OR_NEWER
-			// Display dropdown
+			// 显示下拉框
 			if (EditorGUI.DropdownButton(position, new GUIContent(enumName), FocusType.Passive)) {
 				// 在节点绘制阶段直接弹菜单会导致位置错乱，挂到 onLateGUI 延迟到本帧末尾显示
 				NodeEditorWindow.current.onLateGUI += () => ShowContextMenuAtMouse(property);
 			}
-#else
-			// Display dropdown
-			if (GUI.Button(position, new GUIContent(enumName), "MiniPopup")) {
-				// Position is all wrong if we show the dropdown during the node draw phase.
-				// Instead, add it to onLateGUI to display it later.
-				NodeEditorWindow.current.onLateGUI += () => ShowContextMenuAtMouse(property);
-			}
-#endif
 		}
 
 		/// <summary> 在当前鼠标位置弹出枚举选择菜单，选中项写回属性并应用 </summary>

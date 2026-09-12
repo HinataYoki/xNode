@@ -207,6 +207,19 @@ namespace XNodeEditor {
             Selection.objects = selection.ToArray();
         }
 
+#if UNITY_6000_5_OR_NEWER
+        /// <summary> 双击图资产时打开节点编辑器；处理了返回 true 拦截默认打开行为 </summary>
+        [OnOpenAsset(0)]
+        public static bool OnOpen(EntityId entityId, int line) {
+            XNode.NodeGraph nodeGraph = EditorUtility.EntityIdToObject(entityId) as XNode.NodeGraph;
+            if (nodeGraph != null) {
+                Open(nodeGraph);
+                return true;
+            }
+            return false;
+        }
+#else
+        /// <summary> 双击图资产时打开节点编辑器；处理了返回 true 拦截默认打开行为 </summary>
         [OnOpenAsset(0)]
         public static bool OnOpen(int instanceID, int line) {
             XNode.NodeGraph nodeGraph = EditorUtility.InstanceIDToObject(instanceID) as XNode.NodeGraph;
@@ -216,6 +229,7 @@ namespace XNodeEditor {
             }
             return false;
         }
+#endif
 
         /// <summary> 在节点编辑器中打开指定图 </summary>
         public static NodeEditorWindow Open(XNode.NodeGraph graph) {
