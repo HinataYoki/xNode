@@ -360,9 +360,8 @@ namespace XNodeEditor {
 
             CleanupDestroyedListCache();
 
-            List<XNode.NodePort> dynamicPorts = CollectIndexedDynamicPorts(node, fieldName);
-
             node.UpdatePorts();
+            List<XNode.NodePort> dynamicPorts = CollectIndexedDynamicPorts(node, fieldName);
 
             ReorderableList list = null;
             Dictionary<string, ReorderableList> rlc;
@@ -458,6 +457,8 @@ namespace XNodeEditor {
                 };
             list.onReorderCallback =
                 (ReorderableList rl) => {
+                    Undo.RecordObject(node, "Reorder Dynamic Ports");
+                    if (node.graph != null) Undo.RecordObject(node.graph, "Reorder Dynamic Ports");
                     // 重排序 = 相邻端口逐个交换连接，同时交换锚点缓存避免连线抖动
                     serializedObject.Update();
                     bool hasRect = false;
@@ -501,17 +502,22 @@ namespace XNodeEditor {
 
                     serializedObject.ApplyModifiedProperties();
                     serializedObject.Update();
+                    EditorUtility.SetDirty(node);
+                    if (node.graph != null) EditorUtility.SetDirty(node.graph);
+                    if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
                     NodeEditorWindow.current.Repaint();
                     EditorApplication.delayCall += NodeEditorWindow.current.Repaint;
                 };
             list.onAddCallback =
                 (ReorderableList rl) => {
+                    Undo.RecordObject(node, "Add Dynamic Port");
+                    if (node.graph != null) Undo.RecordObject(node.graph, "Add Dynamic Port");
                     // 按序号后缀命名新增端口
                     string newName = fieldName + " 0";
                     int i = 0;
                     while (node.HasPort(newName)) newName = fieldName + " " + (++i);
 
-                    if (io == XNode.NodePort.IO.Output) node.AddDynamicOutput(type, connectionType, XNode.Node.TypeConstraint.None, newName);
+                    if (io == XNode.NodePort.IO.Output) node.AddDynamicOutput(type, connectionType, typeConstraint, newName);
                     else node.AddDynamicInput(type, connectionType, typeConstraint, newName);
                     serializedObject.Update();
                     EditorUtility.SetDirty(node);
@@ -519,9 +525,14 @@ namespace XNodeEditor {
                         arrayData.InsertArrayElementAtIndex(arrayData.arraySize);
                     }
                     serializedObject.ApplyModifiedProperties();
+                    EditorUtility.SetDirty(node);
+                    if (node.graph != null) EditorUtility.SetDirty(node.graph);
+                    if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
                 };
             list.onRemoveCallback =
                 (ReorderableList rl) => {
+                    Undo.RecordObject(node, "Remove Dynamic Port");
+                    if (node.graph != null) Undo.RecordObject(node.graph, "Remove Dynamic Port");
                     dynamicPorts = CollectIndexedDynamicPorts(node, fieldName);
 
                     int index = rl.index;
@@ -533,8 +544,9 @@ namespace XNodeEditor {
                         dynamicPorts[index].ClearConnections();
                         // 后续端口依次上移补位
                         for (int k = index + 1; k < dynamicPorts.Count; k++) {
-                            for (int j = 0; j < dynamicPorts[k].ConnectionCount; j++) {
-                                XNode.NodePort other = dynamicPorts[k].GetConnection(j);
+                            while (dynamicPorts[k].ConnectionCount > 0) {
+                                XNode.NodePort other = dynamicPorts[k].GetConnection(0);
+                                if (other == null) continue;
                                 dynamicPorts[k].Disconnect(other);
                                 dynamicPorts[k - 1].Connect(other);
                             }
@@ -561,6 +573,9 @@ namespace XNodeEditor {
                         serializedObject.ApplyModifiedProperties();
                         serializedObject.Update();
                     }
+                    EditorUtility.SetDirty(node);
+                    if (node.graph != null) EditorUtility.SetDirty(node.graph);
+                    if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
                 };
 
             // 数组数据与端口数量不一致时先对齐

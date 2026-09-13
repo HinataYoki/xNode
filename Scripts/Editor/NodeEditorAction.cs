@@ -223,6 +223,10 @@ namespace XNodeEditor {
 
                             }
                             else if (e.control || e.shift) selectedReroutes.Remove(hoveredReroute);
+                            for (int i = 0; i < selectedReroutes.Count; i++) {
+                                if (selectedReroutes[i].port != null && selectedReroutes[i].port.node != null)
+                                    Undo.RecordObject(selectedReroutes[i].port.node, "Move Reroute Point");
+                            }
                             e.Use();
                             _activity = NodeActivity.HoldNode;
                         }
@@ -268,6 +272,10 @@ namespace XNodeEditor {
                             for (int i = 0; i < Selection.objects.Length; i++) {
                                 if (Selection.objects[i] is XNode.Node) EditorUtility.SetDirty(Selection.objects[i]);
                             }
+                            for (int i = 0; i < selectedReroutes.Count; i++) {
+                                if (selectedReroutes[i].port != null && selectedReroutes[i].port.node != null)
+                                    EditorUtility.SetDirty(selectedReroutes[i].port.node);
+                            }
                             if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
                         } else if (!IsHoveringNode) {
                             // 点击画布空白处：释放字段焦点
@@ -307,6 +315,7 @@ namespace XNodeEditor {
                             } else if (_activity == NodeActivity.DragNode && Selection.activeObject == null && selectedReroutes.Count == 1) {
                                 // 拖动单个重路由点时右键：在当前位置后插入新点
                                 selectedReroutes[0].InsertPoint(selectedReroutes[0].GetPoint());
+                                if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
                                 selectedReroutes[0] = new RerouteReference(selectedReroutes[0].port, selectedReroutes[0].connectionIndex, selectedReroutes[0].pointIndex + 1);
                             } else if (IsHoveringReroute) {
                                 ShowRerouteContextMenu(hoveredReroute);
@@ -446,6 +455,10 @@ namespace XNodeEditor {
                 selectedReroutes[i].RemovePoint();
             }
             selectedReroutes.Clear();
+            if (graph != null) {
+                EditorUtility.SetDirty(graph);
+                if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
+            }
             UnityEngine.Object[] selection = Selection.objects;
             for (int i = 0; i < selection.Length; i++) {
                 if (selection[i] is XNode.Node) {
@@ -469,8 +482,12 @@ namespace XNodeEditor {
 
         /// <summary> 把节点移到 graph.nodes 末尾，使其绘制在其它节点之上 </summary>
         public void MoveNodeToTop(XNode.Node node) {
+            if (node == null || graph == null || node.graph != graph || !graph.nodes.Contains(node)) return;
+            Undo.RecordObject(graph, "Move Node To Top");
             graph.nodes.Remove(node);
             graph.nodes.Add(node);
+            EditorUtility.SetDirty(graph);
+            if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
         }
 
         /// <summary> 复制选中节点并选中新副本 </summary>

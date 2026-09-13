@@ -35,12 +35,13 @@ namespace XNodeEditor {
 
         /// <summary> 图中不存在该类型的节点时在 position 处补建一个，命名并挂为图资产的子资产 </summary>
         private static void AddRequired(NodeGraph graph, Type type, ref Vector2 position) {
-            if (!graph.nodes.Any(x => x.GetType() == type)) {
+            if (!graph.nodes.Any(x => x != null && x.GetType() == type)) {
                 XNode.Node node = graph.AddNode(type);
                 node.position = position;
                 position.x += 200;
                 if (node.name == null || node.name.Trim() == "") node.name = NodeEditorUtilities.NodeDefaultName(type);
                 if (!string.IsNullOrEmpty(AssetDatabase.GetAssetPath(graph))) AssetDatabase.AddObjectToAsset(node, graph);
+                EditorUtility.SetDirty(graph);
             }
         }
     }

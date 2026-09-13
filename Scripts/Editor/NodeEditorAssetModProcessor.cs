@@ -34,7 +34,10 @@ namespace XNodeEditor {
                     if (node != null && node.GetType () == scriptType && node.graph != null) {
                         // 删除节点并通知用户
                         Debug.LogWarning (node.name + " of " + node.graph + " depended on deleted script and has been removed automatically.", node.graph);
-                        node.graph.RemoveNode (node);
+                        XNode.NodeGraph graph = node.graph;
+                        graph.RemoveNode (node);
+                        if (AssetDatabase.Contains(node)) Object.DestroyImmediate(node, true);
+                        EditorUtility.SetDirty(graph);
                     }
                 }
             }

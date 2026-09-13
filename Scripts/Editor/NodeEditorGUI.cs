@@ -37,24 +37,26 @@ namespace XNodeEditor {
             Event e = Event.current;
             Matrix4x4 m = GUI.matrix;
             if (graph == null) return;
-            ValidateGraphEditor();
-            Controls();
+            try {
+                ValidateGraphEditor();
+                Controls();
 
-            DrawGrid(position, zoom, panOffset);
-            DrawConnections();
-            DrawDraggedConnection();
-            DrawNodes();
-            DrawSelectionBox();
-            DrawTooltip();
-            graphEditor.OnGUI();
+                DrawGrid(position, zoom, panOffset);
+                DrawConnections();
+                DrawDraggedConnection();
+                DrawNodes();
+                DrawSelectionBox();
+                DrawTooltip();
+                graphEditor.OnGUI();
 
-            // 执行并清空 onLateGUI
-            if (onLateGUI != null) {
-                onLateGUI();
-                onLateGUI = null;
+                // 执行并清空 onLateGUI
+                if (onLateGUI != null) {
+                    onLateGUI();
+                    onLateGUI = null;
+                }
+            } finally {
+                GUI.matrix = m;
             }
-
-            GUI.matrix = m;
         }
 
         /// <summary>
@@ -128,9 +130,14 @@ namespace XNodeEditor {
         /// <summary> 弹出悬停重路由点的右键菜单 </summary>
         void ShowRerouteContextMenu(RerouteReference reroute) {
             GenericMenu contextMenu = new GenericMenu();
-            contextMenu.AddItem(new GUIContent("Remove"), false, () => reroute.RemovePoint());
+            contextMenu.AddItem(new GUIContent("Remove"), false, () => {
+                if (reroute.port == null || reroute.port.node == null) return;
+                Undo.RecordObject(reroute.port.node, "Remove Reroute Point");
+                reroute.RemovePoint();
+                EditorUtility.SetDirty(reroute.port.node);
+                if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
+            });
             contextMenu.DropDown(new Rect(Event.current.mousePosition, Vector2.zero));
-            if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
         }
 
         /// <summary> 弹出悬停端口的右键菜单：断开各连接/清空连接/创建兼容节点 </summary>
@@ -139,9 +146,25 @@ namespace XNodeEditor {
             foreach (var port in hoveredPort.GetConnections()) {
                 var name = port.node.name;
                 var index = hoveredPort.GetConnectionIndex(port);
-                contextMenu.AddItem(new GUIContent(string.Format("Disconnect({0})", name)), false, () => hoveredPort.Disconnect(index));
+                contextMenu.AddItem(new GUIContent(string.Format("Disconnect({0})", name)), false, () => {
+                    if (index < 0 || hoveredPort.node == null || port.node == null) return;
+                    Undo.RecordObject(hoveredPort.node, "Disconnect Port");
+                    Undo.RecordObject(port.node, "Disconnect Port");
+                    hoveredPort.Disconnect(index);
+                    EditorUtility.SetDirty(hoveredPort.node);
+                    EditorUtility.SetDirty(port.node);
+                    if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
+                });
             }
-            contextMenu.AddItem(new GUIContent("Clear Connections"), false, () => hoveredPort.ClearConnections());
+            contextMenu.AddItem(new GUIContent("Clear Connections"), false, () => {
+                if (hoveredPort.node == null) return;
+                foreach (XNode.NodePort port in hoveredPort.GetConnections())
+                    if (port != null && port.node != null) Undo.RecordObject(port.node, "Clear Port Connections");
+                Undo.RecordObject(hoveredPort.node, "Clear Port Connections");
+                hoveredPort.ClearConnections();
+                EditorUtility.SetDirty(hoveredPort.node);
+                if (NodeEditorPreferences.GetSettings().autoSave) AssetDatabase.SaveAssets();
+            });
             // 列出与该端口兼容的节点创建项
             if (NodeEditorPreferences.GetSettings().createFilter) {
                 contextMenu.AddSeparator("");
@@ -371,19 +394,22 @@ namespace XNodeEditor {
                     Color portColor = graphEditor.GetPortColor(output);
                     GUIStyle portStyle = graphEditor.GetPortStyle(output);
 
-                    for (int k = 0; k < output.ConnectionCount; k++) {
+                    int k = 0;
+                    while (k < output.ConnectionCount) {
                         XNode.NodePort input = output.GetConnection(k);
 
+                        // GetConnection 会删除失效条目；删除后继续读取同一索引，避免跳过有效连接或越界。
+                        if (input == null) continue;
                         Gradient noodleGradient = graphEditor.GetNoodleGradient(output, input);
                         float noodleThickness = graphEditor.GetNoodleThickness(output, input);
                         NoodlePath noodlePath = graphEditor.GetNoodlePath(output, input);
                         NoodleStroke noodleStroke = graphEditor.GetNoodleStroke(output, input);
-
-                        // 错误处理：脚本更新后端口可能已不存在（此时已从连接表移除并返回 null）
-                        if (input == null) continue;
                         if (!input.IsConnectedTo(output)) input.Connect(output);
                         Rect toRect;
-                        if (!_portConnectionPoints.TryGetValue(input, out toRect)) continue;
+                        if (!_portConnectionPoints.TryGetValue(input, out toRect)) {
+                            k++;
+                            continue;
+                        }
 
                         List<Vector2> reroutePoints = output.GetReroutePoints(k);
 
@@ -412,6 +438,7 @@ namespace XNodeEditor {
                             if (rect.Contains(mousePos)) hoveredReroute = rerouteRef;
 
                         }
+                        k++;
                     }
                 }
             }
@@ -472,7 +499,7 @@ namespace XNodeEditor {
                 portEntriesToRemove.Clear();
                 foreach (var kvp in _portConnectionPoints) {
                     XNode.NodePort port = kvp.Key;
-                    if (port == null || port.node == null || !culledNodes.Contains(port.node)) {
+                    if (port == null || port.node == null || culledNodes.Contains(port.node)) {
                         portEntriesToRemove.Add(port);
                     }
                 }

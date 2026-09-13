@@ -51,7 +51,7 @@ namespace XNodeEditor {
             if (GUILayout.Button("Edit graph", GUILayout.Height(40))) {
                 SerializedProperty graphProp = serializedObject.FindProperty("graph");
                 NodeEditorWindow w = NodeEditorWindow.Open(graphProp.objectReferenceValue as XNode.NodeGraph);
-                w.Home(); // 聚焦选中的节点
+                if (w != null) w.Home(); // 聚焦选中的节点
             }
             base.OnInspectorGUI();
         }
@@ -67,7 +67,7 @@ namespace XNodeEditor {
             if (GUILayout.Button("Edit graph", GUILayout.Height(40))) {
                 SerializedProperty graphProp = serializedObject.FindProperty("graph");
                 NodeEditorWindow w = NodeEditorWindow.Open(graphProp.objectReferenceValue as XNode.NodeGraph);
-                w.Home(); // 聚焦选中的节点
+                if (w != null) w.Home(); // 聚焦选中的节点
             }
 
             GUILayout.Space(EditorGUIUtility.singleLineHeight);

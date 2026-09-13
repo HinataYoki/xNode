@@ -24,7 +24,8 @@ namespace XNodeEditor {
 			NodePort port = node.GetOutputPort(Property.Name);
 
 			if (!NodeEditor.inNodeEditor) {
-				if (Attribute.backingValue == XNode.Node.ShowBackingValue.Always || Attribute.backingValue == XNode.Node.ShowBackingValue.Unconnected && !port.IsConnected)
+				if (Attribute.backingValue == XNode.Node.ShowBackingValue.Always
+					|| Attribute.backingValue == XNode.Node.ShowBackingValue.Unconnected && (port == null || !port.IsConnected))
 					CallNextDrawer(label);
 				return;
 			}

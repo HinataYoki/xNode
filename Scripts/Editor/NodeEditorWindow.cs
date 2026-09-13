@@ -34,15 +34,14 @@ namespace XNodeEditor {
 
             /// <summary> 从端口创建窗口序列化用的快照引用（只存节点 + 字段名，不直接序列化 NodePort） </summary>
             public NodePortReference(XNode.NodePort nodePort) {
+                if (nodePort == null) return;
                 _node = nodePort.node;
                 _name = nodePort.fieldName;
             }
 
             /// <summary> 按快照重新解析出端口；节点已失效时返回 null </summary>
             public XNode.NodePort GetNodePort() {
-                if (_node == null) {
-                    return null;
-                }
+                if (_node == null || string.IsNullOrEmpty(_name)) return null;
                 return _node.GetPort(_name);
             }
         }
@@ -69,12 +68,14 @@ namespace XNodeEditor {
         private void OnEnable() {
             if (!openWindows.Contains(this)) openWindows.Add(this);
             // 窗口重载后按缓存恢复锚点字典
+            _portConnectionPoints.Clear();
+            if (_references == null || _rects == null) return;
             int length = _references.Length;
             if (length == _rects.Length) {
                 for (int i = 0; i < length; i++) {
+                    if (_references[i] == null) continue;
                     XNode.NodePort nodePort = _references[i].GetNodePort();
-                    if (nodePort != null)
-                        _portConnectionPoints.Add(nodePort, _rects[i]);
+                    if (nodePort != null) _portConnectionPoints[nodePort] = _rects[i];
                 }
             }
         }
@@ -122,6 +123,14 @@ namespace XNodeEditor {
         }
 
         void OnLostFocus() {
+            _activity = NodeActivity.Idle;
+            _isPanning = false;
+            _dragOffset = null;
+            draggedOutput = null;
+            draggedOutputTarget = null;
+            autoConnectOutput = null;
+            draggedOutputReroutes.Clear();
+            Repaint();
             if (graphEditor != null) graphEditor.OnWindowFocusLost();
         }
 

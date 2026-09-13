@@ -19,7 +19,7 @@ namespace XNodeEditor {
                 Node nodeAsset = AssetDatabase.LoadMainAssetAtPath(movedAssets[i]) as Node;
 
                 // 图资产的主资产身份被子资产节点抢占时，把图换回主资产并重置节点名
-                if (nodeAsset != null && AssetDatabase.IsMainAsset(nodeAsset)) {
+                if (nodeAsset != null && nodeAsset.graph != null && AssetDatabase.IsMainAsset(nodeAsset)) {
                     AssetDatabase.SetMainObject(nodeAsset.graph, movedAssets[i]);
                     AssetDatabase.ImportAsset(movedAssets[i]);
 

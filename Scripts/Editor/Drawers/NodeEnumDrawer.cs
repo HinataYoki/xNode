@@ -14,6 +14,14 @@ namespace XNodeEditor {
 		public override void OnGUI(Rect position, SerializedProperty property, GUIContent label) {
 			EditorGUI.BeginProperty(position, label, property);
 
+			if (NodeEditorWindow.current == null) {
+				// 普通 Inspector 中按标准枚举字段绘制；不能调用 PropertyField，否则会递归回本绘制器
+				Rect fieldRect = EditorGUI.PrefixLabel(position, label);
+				int index = EditorGUI.Popup(fieldRect, property.enumValueIndex, property.enumDisplayNames);
+				if (index != property.enumValueIndex) property.enumValueIndex = index;
+				EditorGUI.EndProperty();
+				return;
+			}
 			EnumPopup(position, property, label);
 
 			EditorGUI.EndProperty();

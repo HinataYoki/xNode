@@ -22,10 +22,10 @@ namespace XNodeEditor {
         [System.Serializable]
         public class Settings : ISerializationCallbackReceiver {
             [SerializeField] private Color32 _gridLineColor = new Color(.23f, .23f, .23f);
-            public Color32 gridLineColor { get { return _gridLineColor; } set { _gridLineColor = value; _gridTexture = null; _crossTexture = null; } }
+            public Color32 gridLineColor { get { return _gridLineColor; } set { _gridLineColor = value; InvalidateTextures(); } }
 
             [SerializeField] private Color32 _gridBgColor = new Color(.19f, .19f, .19f);
-            public Color32 gridBgColor { get { return _gridBgColor; } set { _gridBgColor = value; _gridTexture = null; } }
+            public Color32 gridBgColor { get { return _gridBgColor; } set { _gridBgColor = value; InvalidateTextures(); } }
 
             [FormerlySerializedAs("zoomOutLimit")]
             public float maxZoom = 5f;
@@ -48,6 +48,13 @@ namespace XNodeEditor {
 
             public NoodleStroke noodleStroke = NoodleStroke.Full;
 
+            internal void InvalidateTextures() {
+                if (_gridTexture != null) UnityEngine.Object.DestroyImmediate(_gridTexture);
+                if (_crossTexture != null) UnityEngine.Object.DestroyImmediate(_crossTexture);
+                _gridTexture = null;
+                _crossTexture = null;
+            }
+
             private Texture2D _gridTexture;
             public Texture2D gridTexture {
                 get {
@@ -67,11 +74,11 @@ namespace XNodeEditor {
             public void OnAfterDeserialize() {
                 // 反序列化类型颜色表
                 typeColors = new Dictionary<string, Color>();
-                string[] data = typeColorsData.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-                for (int i = 0; i < data.Length; i += 2) {
+                string[] data = (typeColorsData ?? string.Empty).Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                for (int i = 0; i + 1 < data.Length; i += 2) {
                     Color col;
                     if (ColorUtility.TryParseHtmlString("#" + data[i + 1], out col)) {
-                        typeColors.Add(data[i], col);
+                        typeColors[data[i]] = col;
                     }
                 }
             }
@@ -88,15 +95,22 @@ namespace XNodeEditor {
 
         /// <summary> 取当前活动图编辑器的设置；无活动窗口时返回默认值 </summary>
         public static Settings GetSettings() {
-            if (XNodeEditor.NodeEditorWindow.current == null) return new Settings();
+            XNodeEditor.NodeEditorWindow window = XNodeEditor.NodeEditorWindow.current;
+            if (window == null || window.graphEditor == null) return new Settings();
 
-            if (lastEditor != XNodeEditor.NodeEditorWindow.current.graphEditor) {
-                object[] attribs = XNodeEditor.NodeEditorWindow.current.graphEditor.GetType().GetCustomAttributes(typeof(XNodeEditor.NodeGraphEditor.CustomNodeGraphEditorAttribute), true);
-                if (attribs.Length == 1) {
-                    XNodeEditor.NodeGraphEditor.CustomNodeGraphEditorAttribute attrib = attribs[0] as XNodeEditor.NodeGraphEditor.CustomNodeGraphEditorAttribute;
-                    lastEditor = XNodeEditor.NodeEditorWindow.current.graphEditor;
-                    lastKey = attrib.editorPrefsKey;
-                } else return null;
+            if (lastEditor != window.graphEditor) {
+                object[] attribs = window.graphEditor.GetType().GetCustomAttributes(typeof(XNodeEditor.NodeGraphEditor.CustomNodeGraphEditorAttribute), true);
+                XNodeEditor.NodeGraphEditor.CustomNodeGraphEditorAttribute selected = null;
+                Type graphType = window.graph != null ? window.graph.GetType() : typeof(XNode.NodeGraph);
+                for (int i = 0; i < attribs.Length; i++) {
+                    XNodeEditor.NodeGraphEditor.CustomNodeGraphEditorAttribute candidate = attribs[i] as XNodeEditor.NodeGraphEditor.CustomNodeGraphEditorAttribute;
+                    if (candidate == null || candidate.GetInspectedType() == null || !candidate.GetInspectedType().IsAssignableFrom(graphType)) continue;
+                    if (selected == null || selected.GetInspectedType().IsAssignableFrom(candidate.GetInspectedType())) selected = candidate;
+                }
+                string selectedKey = selected != null ? selected.editorPrefsKey : "xNode.Settings";
+                if (lastKey != selectedKey) typeColors.Clear();
+                lastEditor = window.graphEditor;
+                lastKey = selectedKey;
             }
             Settings cached;
             if (settings.TryGetValue(lastKey, out cached)) return cached;
@@ -212,13 +226,18 @@ namespace XNodeEditor {
                 if (lastEditor != null) EditorPrefs.SetString(lastKey, JsonUtility.ToJson(lastEditor.GetDefaultPreferences()));
                 else EditorPrefs.SetString(lastKey, JsonUtility.ToJson(new Settings()));
             }
-            return JsonUtility.FromJson<Settings>(EditorPrefs.GetString(lastKey));
+            Settings loaded = JsonUtility.FromJson<Settings>(EditorPrefs.GetString(lastKey));
+            return loaded ?? new Settings();
         }
 
         /// <summary> 删除全部偏好设置 </summary>
         public static void ResetPrefs() {
             if (EditorPrefs.HasKey(lastKey)) EditorPrefs.DeleteKey(lastKey);
-            if (settings.ContainsKey(lastKey)) settings.Remove(lastKey);
+            Settings oldSettings;
+            if (settings.TryGetValue(lastKey, out oldSettings)) {
+                oldSettings.InvalidateTextures();
+                settings.Remove(lastKey);
+            }
             typeColors = new Dictionary<Type, Color>();
             VerifyLoaded();
             NodeEditorWindow.RepaintAll();

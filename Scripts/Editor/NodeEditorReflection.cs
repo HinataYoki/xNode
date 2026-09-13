@@ -22,7 +22,9 @@ namespace XNodeEditor {
         /// <summary> 返回判断窗口是否停靠的委托；缓存委托比每次反射调用更快 </summary>
         public static Func<bool> GetIsDockedDelegate(this EditorWindow window) {
             BindingFlags fullBinding = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
-            MethodInfo isDockedMethod = typeof(EditorWindow).GetProperty("docked", fullBinding).GetGetMethod(true);
+            PropertyInfo dockedProperty = typeof(EditorWindow).GetProperty("docked", fullBinding);
+            MethodInfo isDockedMethod = dockedProperty == null ? null : dockedProperty.GetGetMethod(true);
+            if (window == null || isDockedMethod == null) return () => false;
             return (Func<bool>) Delegate.CreateDelegate(typeof(Func<bool>), window, isDockedMethod);
         }
 
