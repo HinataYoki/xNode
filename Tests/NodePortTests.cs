@@ -210,5 +210,30 @@ namespace XNodeTests {
             Assert.AreEqual(1, graph.nodes.Count);
             Assert.IsFalse(b.GetInputPort("a").IsConnected);
         }
+
+        [Test]
+        public void AddConnections_UsesSnapshotForOverrideTarget() {
+            var upstreamA = graph.AddNode<PassthroughNode>();
+            var upstreamB = graph.AddNode<PassthroughNode>();
+            var sourceInput = graph.AddNode<PassthroughNode>();
+            var overrideTarget = graph.AddNode<OverrideInputNode>();
+            upstreamA.GetOutputPort("b").Connect(sourceInput.GetInputPort("a"));
+            upstreamB.GetOutputPort("b").Connect(sourceInput.GetInputPort("a"));
+
+            overrideTarget.GetInputPort("a").AddConnections(sourceInput.GetInputPort("a"));
+
+            Assert.AreEqual(1, overrideTarget.GetInputPort("a").ConnectionCount);
+            Assert.IsTrue(overrideTarget.GetInputPort("a").IsConnectedTo(upstreamB.GetOutputPort("b")));
+        }
+
+        [Test]
+        public void ValueType_NullClearsSerializedTypeName() {
+            var node = graph.AddNode<PassthroughNode>();
+            NodePort port = node.GetInputPort("a");
+
+            port.ValueType = null;
+
+            Assert.IsNull(port.ValueType);
+        }
     }
 }

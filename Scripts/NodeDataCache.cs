@@ -100,7 +100,13 @@ namespace XNode {
                 string backingPortName = listPort.fieldName.Substring(0, listPort.fieldName.IndexOf(' '));
                 NodePort backingPort = staticPorts[backingPortName];
 
-                listPort.ValueType = GetBackingValueType(backingPort.ValueType);
+                System.Type valueType = GetBackingValueType(backingPort.ValueType);
+                bool settingsChanged = listPort.ValueType != valueType
+                    || listPort.direction != backingPort.direction
+                    || listPort.connectionType != backingPort.connectionType
+                    || listPort.typeConstraint != backingPort.typeConstraint;
+                if (settingsChanged) listPort.ClearConnections();
+                listPort.ValueType = valueType;
                 listPort.direction = backingPort.direction;
                 listPort.connectionType = backingPort.connectionType;
                 listPort.typeConstraint = backingPort.typeConstraint;
@@ -112,9 +118,8 @@ namespace XNode {
         /// 数量一致，且每个端口要么是设置匹配的静态端口，要么是设置匹配后背定义的动态列表端口。
         /// </summary>
         private static bool IsUpToDate(System.Type nodeType, Dictionary<string, NodePort> ports, Dictionary<string, NodePort> staticPorts) {
-            if (ports.Count != staticPorts.Count) return false;
-
             HashSet<string> listFields = null;
+            int staticPortCount = 0;
             bool hasListFields = dynamicPortListFields != null && dynamicPortListFields.TryGetValue(nodeType, out listFields);
 
             foreach (KeyValuePair<string, NodePort> pair in ports) {
@@ -128,11 +133,12 @@ namespace XNode {
                     if (!IsListPortMatchingBacking(listFields, pair.Key, port, staticPorts)) return false;
                     continue;
                 }
+                staticPortCount++;
                 if (port.IsDynamic) return false;
                 if (port.direction != staticPort.direction || port.connectionType != staticPort.connectionType || port.typeConstraint != staticPort.typeConstraint) return false;
                 if (port.ValueType != staticPort.ValueType) return false;
             }
-            return true;
+            return staticPortCount == staticPorts.Count;
         }
 
         /// <summary> 判断一个动态端口是否属于动态列表字段，且方向/连接类型/约束/元素类型都与后背定义一致 </summary>

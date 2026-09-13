@@ -211,14 +211,14 @@ namespace XNode {
         /// <summary> 按字段名取输入值；端口未连接时返回 fallback </summary>
         public T GetInputValue<T>(string fieldName, T fallback = default(T)) {
             NodePort port = GetPort(fieldName);
-            if (port != null && port.IsConnected) return port.GetInputValue<T>();
+            if (port != null && port.Connection != null) return port.GetInputValue<T>();
             else return fallback;
         }
 
         /// <summary> 按字段名取全部输入值；端口未连接时返回 fallback </summary>
         public T[] GetInputValues<T>(string fieldName, params T[] fallback) {
             NodePort port = GetPort(fieldName);
-            if (port != null && port.IsConnected) return port.GetInputValues<T>();
+            if (port != null && port.Connection != null) return port.GetInputValues<T>();
             else return fallback;
         }
 

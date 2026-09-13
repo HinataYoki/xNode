@@ -17,8 +17,18 @@ namespace XNode {
 
         /// <summary> 按类型添加节点 </summary>
         public virtual Node AddNode(Type type) {
+            if (type == null) throw new ArgumentNullException("type");
+            if (!typeof(Node).IsAssignableFrom(type) || type.IsAbstract)
+                throw new ArgumentException("节点类型必须是具体的 Node 子类", "type");
+
+            Node node;
             Node.graphHotfix = this;
-            Node node = ScriptableObject.CreateInstance(type) as Node;
+            try {
+                node = ScriptableObject.CreateInstance(type) as Node;
+            } finally {
+                if (Node.graphHotfix == this) Node.graphHotfix = null;
+            }
+            if (node == null) throw new InvalidOperationException("无法创建节点 " + type.FullName);
             node.graph = this;
             nodes.Add(node);
             return node;
@@ -26,8 +36,14 @@ namespace XNode {
 
         /// <summary> 在图中创建指定节点的副本 </summary>
         public virtual Node CopyNode(Node original) {
+            if (original == null) throw new ArgumentNullException("original");
             Node.graphHotfix = this;
-            Node node = ScriptableObject.Instantiate(original);
+            Node node;
+            try {
+                node = ScriptableObject.Instantiate(original);
+            } finally {
+                if (Node.graphHotfix == this) Node.graphHotfix = null;
+            }
             node.graph = this;
             node.ClearConnections();
             nodes.Add(node);
@@ -37,6 +53,8 @@ namespace XNode {
         /// <summary> 安全移除节点及其全部连接 </summary>
         /// <param name="node">要移除的节点</param>
         public virtual void RemoveNode(Node node) {
+            if (node == null) throw new ArgumentNullException("node");
+            if (!nodes.Contains(node)) return;
             node.ClearConnections();
             nodes.Remove(node);
             if (Application.isPlaying) Destroy(node);
@@ -44,10 +62,11 @@ namespace XNode {
 
         /// <summary> 清空图中的全部节点和连接 </summary>
         public virtual void Clear() {
-            if (Application.isPlaying) {
-                for (int i = 0; i < nodes.Count; i++) {
-                    if (nodes[i] != null) Destroy(nodes[i]);
-                }
+            for (int i = 0; i < nodes.Count; i++) {
+                Node node = nodes[i];
+                if (node == null) continue;
+                node.ClearConnections();
+                if (Application.isPlaying) Destroy(node);
             }
             nodes.Clear();
         }
@@ -59,9 +78,13 @@ namespace XNode {
             for (int i = 0; i < nodes.Count; i++) {
                 if (nodes[i] == null) continue;
                 Node.graphHotfix = graph;
-                Node node = Instantiate(nodes[i]) as Node;
-                node.graph = graph;
-                graph.nodes[i] = node;
+                try {
+                    Node node = Instantiate(nodes[i]) as Node;
+                    node.graph = graph;
+                    graph.nodes[i] = node;
+                } finally {
+                    if (Node.graphHotfix == graph) Node.graphHotfix = null;
+                }
             }
 
             // 把节点连接从旧节点列表批量重定向到新节点列表

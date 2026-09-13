@@ -12,13 +12,17 @@ namespace XNode {
     public class NodePort {
         public enum IO { Input, Output }
 
-        public int ConnectionCount { get { return connections.Count; } }
+        public int ConnectionCount { get { return connections == null ? 0 : connections.Count; } }
 
         /// <summary> 取第一个非空连接的对端端口，无连接时返回 null </summary>
         public NodePort Connection {
             get {
+                if (connections == null) return null;
                 for (int i = 0; i < connections.Count; i++) {
-                    if (connections[i] != null) return connections[i].Port;
+                    if (connections[i] != null) {
+                        NodePort port = connections[i].Port;
+                        if (port != null) return port;
+                    }
                 }
                 return null;
             }
@@ -38,7 +42,7 @@ namespace XNode {
         }
 
         /// <summary> 端口是否已连接任何对象 </summary>
-        public bool IsConnected { get { return connections.Count != 0; } }
+        public bool IsConnected { get { return Connection != null; } }
         public bool IsInput { get { return direction == IO.Input; } }
         public bool IsOutput { get { return direction == IO.Output; } }
 
@@ -52,9 +56,9 @@ namespace XNode {
                 return valueType;
             }
             set {
-                if (valueType == value) return;
+                if (valueType == value && (value != null || string.IsNullOrEmpty(_typeQualifiedName))) return;
                 valueType = value;
-                if (value != null) _typeQualifiedName = NodeDataCache.GetTypeQualifiedName(value);
+                _typeQualifiedName = value == null ? null : NodeDataCache.GetTypeQualifiedName(value);
             }
         }
         private Type valueType;
@@ -115,12 +119,20 @@ namespace XNode {
 
         /// <summary> 校验所有连接引用，移除指向已失效节点或端口的条目 </summary>
         public void VerifyConnections() {
+            if (connections == null) connections = new List<PortConnection>();
             for (int i = connections.Count - 1; i >= 0; i--) {
-                if (connections[i].node != null &&
-                    !string.IsNullOrEmpty(connections[i].fieldName) &&
-                    connections[i].node.GetPort(connections[i].fieldName) != null)
+                PortConnection connection = connections[i];
+                NodePort connectedPort = connection == null ? null : connection.Port;
+                if (connectedPort == null) {
+                    connections.RemoveAt(i);
                     continue;
-                connections.RemoveAt(i);
+                }
+
+                // 修复序列化或脚本重载造成的单边连接，保证两端仍然对称。
+                if (!connectedPort.IsConnectedTo(this)) {
+                    if (connectedPort.connections == null) connectedPort.connections = new List<PortConnection>();
+                    connectedPort.connections.Add(new PortConnection(this));
+                }
             }
         }
 
@@ -156,10 +168,11 @@ namespace XNode {
 
         /// <summary> 取所有连接端口的输出值；顺带剔除失效连接 </summary>
         public object[] GetInputValues() {
+            if (connections == null || connections.Count == 0) return new object[0];
             object[] objs = new object[connections.Count];
             int valueCount = 0;
             for (int i = 0; i < connections.Count; i++) {
-                NodePort connectedPort = connections[i].Port;
+                NodePort connectedPort = connections[i] == null ? null : connections[i].Port;
                 if (connectedPort == null) {
                     connections.RemoveAt(i);
                     i--;
@@ -229,9 +242,14 @@ namespace XNode {
         public void Connect(NodePort port) {
             if (connections == null) connections = new List<PortConnection>();
             if (port == null) { Debug.LogWarning("不能连接到空端口"); return; }
+            if (port.connections == null) port.connections = new List<PortConnection>();
             if (port == this) { Debug.LogWarning("端口不能连接自身"); return; }
             if (IsConnectedTo(port)) { Debug.LogWarning("端口已连接"); return; }
             if (direction == port.direction) { Debug.LogWarning("不能连接两个同为" + (direction == IO.Input ? "输入" : "输出") + "的端口"); return; }
+            if (!CanConnectTo(port)) {
+                Debug.LogWarning("端口类型不兼容，无法建立连接");
+                return;
+            }
 #if UNITY_EDITOR
             UnityEditor.Undo.RecordObject(node, "Connect Port");
             UnityEditor.Undo.RecordObject(port.node, "Connect Port");
@@ -242,12 +260,15 @@ namespace XNode {
             connections.Add(new PortConnection(port));
             if (port.connections == null) port.connections = new List<PortConnection>();
             if (!port.IsConnectedTo(this)) port.connections.Add(new PortConnection(this));
-            node.OnCreateConnection(this, port);
-            port.node.OnCreateConnection(this, port);
+            NodePort output = IsOutput ? this : port;
+            NodePort input = IsInput ? this : port;
+            output.node.OnCreateConnection(output, input);
+            input.node.OnCreateConnection(output, input);
         }
 
         /// <summary> 取所有有效连接的对端端口列表；顺带剔除失效连接 </summary>
         public List<NodePort> GetConnections() {
+            if (connections == null || connections.Count == 0) return new List<NodePort>();
             List<NodePort> result = new List<NodePort>(connections.Count);
             for (int i = 0; i < connections.Count; i++) {
                 NodePort port = GetConnection(i);
@@ -259,6 +280,10 @@ namespace XNode {
 
         /// <summary> 取第 i 个连接的对端端口；发现失效连接时顺带清理 </summary>
         public NodePort GetConnection(int i) {
+            if (connections == null || i < 0 || i >= connections.Count || connections[i] == null) {
+                if (connections != null && i >= 0 && i < connections.Count) connections.RemoveAt(i);
+                return null;
+            }
             if (connections[i].node == null) {
                 connections.RemoveAt(i);
                 return null;
@@ -272,22 +297,25 @@ namespace XNode {
 
         /// <summary> 取连接指定端口的那条连接在列表中的索引，不存在返回 -1 </summary>
         public int GetConnectionIndex(NodePort port) {
+            if (connections == null) return -1;
             for (int i = 0; i < connections.Count; i++) {
-                if (connections[i].Port == port) return i;
+                if (connections[i] != null && connections[i].Port == port) return i;
             }
             return -1;
         }
 
         /// <summary> 本端口是否已连接指定端口 </summary>
         public bool IsConnectedTo(NodePort port) {
+            if (port == null || connections == null) return false;
             for (int i = 0; i < connections.Count; i++) {
-                if (connections[i].Port == port) return true;
+                if (connections[i] != null && connections[i].Port == port) return true;
             }
             return false;
         }
 
         /// <summary> 判断本端口能否与指定端口相连（一进一出 + 双侧类型约束校验） </summary>
         public bool CanConnectTo(NodePort port) {
+            if (port == null || port == this) return false;
             // 先分清输入输出侧；同向端口无法相连
             NodePort input = null, output = null;
             if (IsInput) input = this;
@@ -305,6 +333,8 @@ namespace XNode {
         /// 端口连接校验与编辑器创建菜单的兼容性过滤共用此实现，避免两处语义漂移。
         /// </summary>
         public static bool MatchesConstraint(Node.TypeConstraint constraint, Type inputType, Type outputType) {
+            if (constraint == Node.TypeConstraint.None) return true;
+            if (inputType == null || outputType == null) return false;
             switch (constraint) {
                 case Node.TypeConstraint.Inherited:
                     return inputType.IsAssignableFrom(outputType);
@@ -321,33 +351,49 @@ namespace XNode {
 
         /// <summary> 断开与指定端口的全部连接，双向同步移除并触发两侧回调 </summary>
         public void Disconnect(NodePort port) {
+            if (connections == null || port == null) return;
+            bool removed = false;
             // 移除本端指向对方的连接
             for (int i = connections.Count - 1; i >= 0; i--) {
-                if (connections[i].Port == port) connections.RemoveAt(i);
+                if (connections[i] != null && connections[i].Port == port) {
+                    connections.RemoveAt(i);
+                    removed = true;
+                }
             }
-            if (port != null) {
-                // 移除对方指回本端的连接并触发其回调
-                port.connections.RemoveAll(it => it.Port == this);
-                port.node.OnRemoveConnection(port);
-            }
+            if (!removed) return;
+#if UNITY_EDITOR
+            UnityEditor.Undo.RecordObject(node, "Disconnect Port");
+            if (port.node != null) UnityEditor.Undo.RecordObject(port.node, "Disconnect Port");
+#endif
+            // 移除对方指回本端的连接并触发其回调
+            if (port.connections != null) port.connections.RemoveAll(it => it != null && it.Port == this);
+            port.node.OnRemoveConnection(port);
             node.OnRemoveConnection(this);
         }
 
         /// <summary> 按索引断开一条连接，双向同步移除并触发两侧回调 </summary>
         public void Disconnect(int i) {
-            NodePort otherPort = connections[i].Port;
+            if (connections == null || i < 0 || i >= connections.Count) return;
+            NodePort otherPort = connections[i] == null ? null : connections[i].Port;
+#if UNITY_EDITOR
+            UnityEditor.Undo.RecordObject(node, "Disconnect Port");
+            if (otherPort != null && otherPort.node != null) UnityEditor.Undo.RecordObject(otherPort.node, "Disconnect Port");
+#endif
             connections.RemoveAt(i);
             node.OnRemoveConnection(this);
             if (otherPort != null) {
-                otherPort.connections.RemoveAll(it => it.Port == this);
+                if (otherPort.connections != null) otherPort.connections.RemoveAll(it => it != null && it.Port == this);
                 otherPort.node.OnRemoveConnection(otherPort);
             }
         }
 
         /// <summary> 断开本端口全部连接 </summary>
         public void ClearConnections() {
+            if (connections == null) return;
             while (connections.Count > 0) {
-                Disconnect(connections[0].Port);
+                NodePort port = connections[0] == null ? null : connections[0].Port;
+                if (port == null) connections.RemoveAt(0);
+                else Disconnect(port);
             }
         }
 
@@ -358,14 +404,10 @@ namespace XNode {
 
         /// <summary> 与另一端口互换全部连接（用于编辑器端口交换操作） </summary>
         public void SwapConnections(NodePort targetPort) {
+            if (targetPort == null || targetPort == this) return;
             // 先快照两侧连接，清空后交叉重连，避免遍历中修改列表
-            List<NodePort> portConnections = new List<NodePort>(connections.Count);
-            for (int i = 0; i < connections.Count; i++)
-                portConnections.Add(connections[i].Port);
-
-            List<NodePort> targetPortConnections = new List<NodePort>(targetPort.connections.Count);
-            for (int i = 0; i < targetPort.connections.Count; i++)
-                targetPortConnections.Add(targetPort.connections[i].Port);
+            List<NodePort> portConnections = GetConnections();
+            List<NodePort> targetPortConnections = targetPort.GetConnections();
 
             ClearConnections();
             targetPort.ClearConnections();
@@ -379,21 +421,23 @@ namespace XNode {
 
         /// <summary> 把目标端口的全部连接复制一份接到本端口 </summary>
         public void AddConnections(NodePort targetPort) {
-            int connectionCount = targetPort.ConnectionCount;
-            for (int i = 0; i < connectionCount; i++) {
-                Connect(targetPort.connections[i].Port);
+            if (targetPort == null || targetPort.connections == null) return;
+            List<NodePort> targetConnections = new List<NodePort>(targetPort.connections.Count);
+            for (int i = 0; i < targetPort.connections.Count; i++) {
+                if (targetPort.connections[i] != null) {
+                    NodePort port = targetPort.connections[i].Port;
+                    if (port != null) targetConnections.Add(port);
+                }
             }
+            for (int i = 0; i < targetConnections.Count; i++) Connect(targetConnections[i]);
         }
 
         /// <summary> 把本端口的全部连接迁移到目标端口；先断开再逐个重连，避免遍历中改双向连接导致漏移 </summary>
         public void MoveConnections(NodePort targetPort) {
             if (targetPort == null) throw new ArgumentNullException("targetPort");
+            if (targetPort == this) return;
 
-            List<NodePort> portConnections = new List<NodePort>(connections.Count);
-            for (int i = 0; i < connections.Count; i++) {
-                NodePort otherPort = connections[i].Port;
-                if (otherPort != null) portConnections.Add(otherPort);
-            }
+            List<NodePort> portConnections = GetConnections();
 
             ClearConnections();
             for (int i = 0; i < portConnections.Count; i++) {
@@ -403,9 +447,15 @@ namespace XNode {
 
         /// <summary> 图深拷贝后，把旧节点列表的引用批量重定向到新节点列表 </summary>
         public void Redirect(List<Node> oldNodes, List<Node> newNodes) {
+            if (connections == null) return;
             foreach (PortConnection connection in connections) {
+                if (connection == null) continue;
                 int index = oldNodes.IndexOf(connection.node);
-                if (index >= 0) connection.node = newNodes[index];
+                if (index >= 0) {
+                    connection.node = newNodes[index];
+                    // Instantiate 期间 Init 可能已解析并缓存旧图端口，重定向后必须刷新该缓存。
+                    connection.RefreshPort();
+                }
             }
         }
 
@@ -433,6 +483,11 @@ namespace XNode {
                 this.port = port;
                 node = port.node;
                 fieldName = port.fieldName;
+            }
+
+            /// <summary> 节点引用重定向后刷新运行时端口缓存 </summary>
+            public void RefreshPort() {
+                port = GetPort();
             }
 
             /// <summary> 按字段名解析出目标端口；节点或字段名失效时返回 null </summary>

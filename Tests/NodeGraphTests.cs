@@ -16,6 +16,13 @@ namespace XNodeTests {
             }
         }
 
+        private class InitReadsConnectionNode : PassthroughNode {
+            protected override void Init() {
+                // Clone 的 OnEnable/Init 阶段会先访问旧图连接，覆盖 Redirect 的缓存回归路径。
+                if (GetInputPort("a").IsConnected) GetInputPort("a").Connection.ToString();
+            }
+        }
+
         private TestGraph graph;
 
         [SetUp]
@@ -105,6 +112,51 @@ namespace XNodeTests {
             Assert.AreEqual(1, graph.nodes.Count);
             Assert.AreEqual(a, graph.nodes[0]);
             Assert.IsFalse(a.GetOutputPort("b").IsConnected);
+        }
+
+        [Test]
+        public void RemoveNode_IgnoresNodeFromAnotherGraph() {
+            TestGraph otherGraph = ScriptableObject.CreateInstance<TestGraph>();
+            try {
+                var source = graph.AddNode<PassthroughNode>();
+                var target = graph.AddNode<PassthroughNode>();
+                source.GetOutputPort("b").Connect(target.GetInputPort("a"));
+
+                otherGraph.RemoveNode(source);
+
+                Assert.AreEqual(2, graph.nodes.Count);
+                Assert.IsTrue(source.GetOutputPort("b").IsConnectedTo(target.GetInputPort("a")));
+            } finally {
+                Object.DestroyImmediate(otherGraph);
+            }
+        }
+
+        [Test]
+        public void Clear_RemovesConnectionsBeforeClearingNodes() {
+            var source = graph.AddNode<PassthroughNode>();
+            var target = graph.AddNode<PassthroughNode>();
+            source.GetOutputPort("b").Connect(target.GetInputPort("a"));
+
+            graph.Clear();
+
+            Assert.AreEqual(0, graph.nodes.Count);
+            Assert.IsFalse(source.GetOutputPort("b").IsConnected);
+            Assert.IsFalse(target.GetInputPort("a").IsConnected);
+        }
+
+        [Test]
+        public void Copy_RedirectsConnectionsAfterInitAccess() {
+            var source = graph.AddNode<PassthroughNode>();
+            var target = graph.AddNode<InitReadsConnectionNode>();
+            source.GetOutputPort("b").Connect(target.GetInputPort("a"));
+
+            NodeGraph copy = graph.Copy();
+            try {
+                NodePort copiedInput = copy.nodes[1].GetInputPort("a");
+                Assert.AreEqual(copy.nodes[0], copiedInput.Connection.node);
+            } finally {
+                Object.DestroyImmediate(copy);
+            }
         }
     }
 }
